@@ -1,0 +1,6 @@
+pysradb>=1.4
+ffq>=0.3
+pandas>=2.0
+jupyter>=1.0
+ipykernel>=6.0
+synapseclient>=4.0   # needed as the Python backend for R's synapser
