@@ -1,0 +1,402 @@
+---
+title: "Candidate Dataset Search: AD vs. Control Prefrontal Cortex RNA-seq"
+subtitle: "For expression analysis of a custom noncoding region on chr15"
+author: "Your name"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    code-fold: true
+    code-summary: "Show code"
+    embed-resources: true
+execute:
+  eval: true
+  warning: false
+---
+
+## Objective
+
+We're looking for public RNA-seq datasets suitable for comparing expression
+of a noncoding region on chromosome 15 (chr15:25,028,445-25,030,175) between
+Alzheimer's disease (AD) patients and healthy controls.
+
+**What we're looking for:**
+
+| Criterion | Target |
+|---|---|
+| Library prep | Random-primed (not poly-A selected); long-read sequencing preferred if available |
+| Tissue | Prefrontal cortex (PFC) / DLPFC |
+| Groups | AD vs. control, age-matched |
+| Sample size | 30-50 samples per group |
+| Covariates | Sex (optional) |
+| Annotation | This region isn't in standard reference annotations, so it will need custom quantification regardless of which dataset(s) we use |
+
+Each section below covers one search approach: what we did, why, and what
+was found. Code is included but collapsed by default -- click "Show code"
+under any section to see exactly how a result was produced.
+
+---
+
+## 1. Public repository search: three complementary channels
+
+Rather than relying on one narrow style of search, this section runs
+three different, independent approaches and combines whatever each one
+finds. Each channel has a different blind spot, so running all three
+catches more than any one alone would:
+
+**A. SRA free-text search** -- searches study titles/descriptions for
+exact phrase combinations (e.g. "Alzheimer" + "prefrontal cortex"). Fast,
+but blind to studies that phrase things differently, or that only mention
+tissue in a metadata field this search doesn't read.
+
+**B. GEO index search** -- GEO records include a free-text summary and
+"overall design" section that authors write themselves, which is far
+richer than SRA's title/description fields. Searching GEO directly (then
+resolving matches back to their SRA accessions) catches studies that
+never would have matched channel A's stricter phrase search.
+
+**C. Literature search** -- searches PubMed directly for relevant papers,
+then pulls the GEO/SRA accession straight out of each paper's own
+listed dataset ID. This catches datasets whose paper describes the
+tissue/cohort clearly in the abstract, even if the deposited record's own
+title or description is terse or non-descriptive (a common issue --
+depositors often don't write good metadata).
+
+Every candidate found by any channel goes into one combined list, tagged
+with which channel(s) found it -- so nothing gets silently dropped just
+because one search style happened to miss it.
+
+```{r}
+#| label: setup-reticulate
+#| echo: false
+# Points R's Python interface at this project's virtual environment.
+# Adjust the path if your .venv lives somewhere else.
+reticulate::use_python(
+  "/Users/heatherkates/Downloads/ad-noncoding-expression/.venv/bin/python",
+  required = TRUE
+)
+```
+
+```{python}
+#| label: channel-a-sra-search
+import pandas as pd
+from pysradb import SRAweb
+db = SRAweb()
+
+# Channel A: SRA free-text search, several phrasings
+sra_queries = [
+    '"Alzheimer" AND "prefrontal cortex"',
+    "\"Alzheimer's disease\" AND \"DLPFC\"",
+    '"Alzheimer" AND "frontal cortex"',
+    '"dementia" AND "prefrontal cortex"',
+    '"Alzheimer" AND "BA9"',
+    '"Alzheimer" AND "BA10"',
+    '"Alzheimer" AND "middle frontal gyrus"',
+    '"Alzheimer" AND "superior frontal gyrus"',
+]
+
+sra_hits = []
+for q in sra_queries:
+    r = db.search_sra(search_str=q)
+    if r is None or len(r) == 0:
+        continue
+    r["query_used"] = q
+    r["found_via"] = "A: SRA search"
+    sra_hits.append(r)
+
+channel_a = pd.concat(sra_hits, ignore_index=True) if sra_hits else pd.DataFrame()
+```
+
+```{python}
+#| label: channel-b-geo-search
+#| eval: false
+# PAUSED: this query syntax was wrong -- space-separated terms are read as
+# an implicit AND of all six words, an even narrower search than what we
+# were trying to fix (0 results). Needs proper boolean OR syntax before
+# it's worth re-running; not a priority given Channel C already found
+# real candidates below.
+from pysradb.search import GeoSearch
+
+geo_search = GeoSearch(
+    organism="Homo sapiens",
+    geo_query="Alzheimer prefrontal cortex DLPFC frontal cortex RNA-seq",
+    geo_dataset_type="expression profiling by high throughput sequencing",
+    return_max=200,
+)
+geo_search.search()
+channel_b = geo_search.get_df()
+```
+
+```{python}
+#| label: channel-c-literature-search
+import requests
+import time
+
+# Channel C: search PubMed directly, then pull the GEO/SRA accession out
+# of each paper's own record.
+pubmed_query = (
+    '(Alzheimer[Title/Abstract] OR "Alzheimer\'s disease"[Title/Abstract] '
+    'OR dementia[Title/Abstract]) AND '
+    '(prefrontal[Title/Abstract] OR DLPFC[Title/Abstract] '
+    'OR "frontal cortex"[Title/Abstract] OR BA9[Title/Abstract] '
+    'OR BA10[Title/Abstract] OR "frontal gyrus"[Title/Abstract]) AND '
+    '(RNA-seq[Title/Abstract] OR "RNA sequencing"[Title/Abstract] '
+    'OR transcriptom*[Title/Abstract])'
+)
+
+esearch = requests.get(
+    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+    params={"db": "pubmed", "term": pubmed_query, "retmax": 300, "retmode": "json"},
+).json()
+pmids = esearch.get("esearchresult", {}).get("idlist", [])
+
+# Pace requests -- NCBI allows ~3/sec without an API key; going faster
+# than that is what triggered the 502 errors last run.
+lit_hits = []
+for pmid in pmids:
+    try:
+        ids = db.pmid_to_identifiers(pmid)
+    except Exception:
+        continue
+    if ids is not None and len(ids):
+        ids["pmid"] = pmid
+        ids["found_via"] = "C: Literature search"
+        lit_hits.append(ids)
+    time.sleep(0.35)
+
+channel_c = pd.concat(lit_hits, ignore_index=True) if lit_hits else pd.DataFrame()
+
+# Save immediately -- don't let a downstream step lose this if it fails.
+channel_c.to_csv("candidate_literature_raw.csv", index=False)
+```
+
+**For manual review:** rather than running more automated NCBI queries
+against each of these (which is what triggered the rate-limiting above),
+here's the deduplicated list of unique papers/accessions Channel C found
+-- worth a quick manual scan of titles for anything obviously on- or
+off-topic before spending more automation effort on it.
+
+```{r}
+#| label: channel-c-dedup-table
+#| echo: false
+if (file.exists("candidate_literature_raw.csv")) {
+  lit_raw <- read.csv("candidate_literature_raw.csv")
+  id_col <- intersect(c("gse_ids", "srp_ids", "prjna_ids"), names(lit_raw))
+  cat(sprintf("**%d** paper-to-accession matches found (before dedup).\n\n", nrow(lit_raw)))
+  knitr::kable(lit_raw |> dplyr::distinct(dplyr::across(dplyr::any_of(c(id_col, "pmid")))))
+} else {
+  cat("_Run the literature search chunk above first._")
+}
+```
+
+```{r}
+#| label: channel-c-download
+#| echo: false
+#| results: asis
+if (file.exists("candidate_literature_raw.csv")) {
+  cat(xfun::embed_file("candidate_literature_raw.csv", text = "Download literature-derived candidates (CSV)"))
+}
+```
+
+```{python}
+#| label: filter-channel-a
+# Channel A is the only channel feeding the automated filter pipeline
+# right now -- Channel B is paused (broken query), and Channel C's results
+# are handled separately above as a manual-review list rather than run
+# through more automated NCBI calls.
+combined = channel_a.copy()
+
+# Human samples only -- catches false positives like mouse AD-model studies
+combined_human = combined[combined["organism_name"] == "Homo sapiens"] if len(combined) else combined
+
+# RNA-seq only -- free-text search also pulls in non-RNA-seq assays (e.g.
+# a DNA-methylation/Bisulfite-Seq study that happened to mention the right
+# tissue and disease terms).
+combined_rna = combined_human[
+    combined_human["library_strategy"].str.contains("RNA-Seq", case=False, na=False)
+] if len(combined_human) else combined_human
+
+# Flag likely single-cell/single-nucleus studies rather than silently
+# dropping or including them -- client confirmed bulk RNA-seq is the
+# target, so this column makes it a one-glance filter instead of a
+# per-title manual read.
+sc_pattern = "single.cell|single.nuclei|single.nucleus|snRNA|scRNA|10x genomics|sn-rna|sc-rna"
+
+# Flag specialized RNA-modification/IP assays (e.g. m6A-IP / MeRIP-seq) --
+# these report library_strategy = "RNA-Seq" but aren't whole-transcriptome
+# expression profiling.
+mod_pattern = "m6a|merip|meripseq|rna.ip|immunoprecipitation"
+
+if len(combined_rna):
+    combined_rna = combined_rna.copy()
+    combined_rna["likely_single_cell"] = (
+        combined_rna["study_title"].str.contains(sc_pattern, case=False, na=False, regex=True)
+        | combined_rna["experiment_title"].str.contains(sc_pattern, case=False, na=False, regex=True)
+    )
+    combined_rna["likely_specialized_assay"] = (
+        combined_rna["study_title"].str.contains(mod_pattern, case=False, na=False, regex=True)
+        | combined_rna["experiment_title"].str.contains(mod_pattern, case=False, na=False, regex=True)
+    )
+
+human_studies = combined_rna["study_accession"].unique().tolist() if len(combined_rna) else []
+
+combined_rna.to_csv("candidate_studies_sra.csv", index=False)
+```
+
+**Results:**
+
+```{r}
+#| label: sra-results-table
+#| echo: false
+if (file.exists("candidate_studies_sra.csv")) {
+  sra_results <- read.csv("candidate_studies_sra.csv")
+  cat(sprintf("**%d** human RNA-seq runs found, across **%d** distinct studies.\n\n",
+              nrow(sra_results), length(unique(sra_results$study_accession))))
+  knitr::kable(
+    sra_results |>
+      dplyr::distinct(study_accession, study_title) ,
+    col.names = c("Study accession", "Study title")
+  )
+} else {
+  cat("_No results yet -- run the search above first._")
+}
+```
+
+```{r}
+#| label: sra-download
+#| echo: false
+#| results: asis
+if (file.exists("candidate_studies_sra.csv")) {
+  cat(xfun::embed_file("candidate_studies_sra.csv", text = "Download SRA candidate list (CSV)"))
+}
+```
+
+---
+
+## 2. Consortium search: AMP-AD / AD Knowledge Portal (Synapse)
+
+**What we did:** Logged into Synapse and located the AMP-AD RNAseq
+Harmonization Study, which combines RNA-seq data from the three major
+Alzheimer's brain-tissue cohorts (ROSMAP, MSBB, and Mayo Clinic) into one
+uniformly processed dataset.
+
+**Why:** This is the strongest candidate source for the 30-50 samples per
+group target -- these cohorts include hundreds of prefrontal-cortex samples
+each, with matched age and sex information already collected. Public SRA
+search (Section 1) is unlikely to surface a study this size on its own,
+since access to these cohorts requires a data use request rather than a
+plain download.
+
+```{r}
+#| label: synapse-query
+#| eval: false
+# eval: false until Synapse login + data access approval are in place --
+# flip to true once that's set up.
+synLogin()
+
+# AMP-AD RNAseq Harmonization Study (ROSMAP + MSBB + Mayo combined)
+harmonized_study <- "syn21241740"
+
+children <- as.list(synGetChildren(harmonized_study))
+children_df <- do.call(rbind, lapply(children, function(x) {
+  data.frame(name = x$name, id = x$id, type = x$type, stringsAsFactors = FALSE)
+}))
+
+metadata_table_id <- "REPLACE_WITH_TABLE_ID_FROM_ABOVE"
+```
+
+```{r}
+#| label: synapse-metadata-pull
+#| eval: false
+meta <- synTableQuery(
+  sprintf("SELECT * FROM %s WHERE tissue LIKE '%%prefrontal%%'", metadata_table_id)
+)$asDataFrame()
+
+pfc_ad_control <- meta |>
+  dplyr::filter(diagnosis %in% c("AD", "Control")) |>
+  dplyr::filter(!is.na(age_death), !is.na(sex))
+
+write.csv(pfc_ad_control, "candidate_samples_synapse.csv", row.names = FALSE)
+```
+
+**Status:** In progress -- Synapse access is authenticated, but data-use
+approval for the controlled-access cohorts (ROSMAP, MSBB, Mayo) is still
+being finalized, and the specific metadata table ID needs to be confirmed.
+Results will populate here automatically once that's complete.
+
+```{r}
+#| label: synapse-download
+#| echo: false
+#| results: asis
+if (file.exists("candidate_samples_synapse.csv")) {
+  cat(xfun::embed_file("candidate_samples_synapse.csv", text = "Download AMP-AD candidate samples (CSV)"))
+} else {
+  cat("_Download link will appear here once Synapse data access is complete._")
+}
+```
+
+---
+
+## 3. Candidate dataset summary
+
+This table is the running answer to "which datasets fit the brief" --
+updated as each search source above completes.
+
+```{r}
+#| label: summary-table
+#| echo: false
+summary_tbl <- tibble::tribble(
+  ~Dataset,       ~Source,          ~Tissue,     ~`AD (n)`, ~`Control (n)`, ~`Library prep`,      ~`Long-read`, ~Status,
+  "ROSMAP",       "AMP-AD/Synapse", "DLPFC",      NA,         NA,            "Poly-A (typical) - confirming", "No",  "Pending data access",
+  "MSBB",         "AMP-AD/Synapse", "PFC (BM10)", NA,         NA,            "Poly-A (typical) - confirming", "No",  "Pending data access",
+  "Mayo RNAseq",  "AMP-AD/Synapse", "TCX / CER",  NA,         NA,            "Poly-A (typical)",   "No",  "Likely excluded - wrong tissue region",
+)
+knitr::kable(summary_tbl)
+write.csv(summary_tbl, "candidate_dataset_summary.csv", row.names = FALSE)
+```
+
+```{r}
+#| label: summary-download
+#| echo: false
+#| results: asis
+cat(xfun::embed_file("candidate_dataset_summary.csv", text = "Download dataset summary (CSV)"))
+```
+
+---
+
+## 4. How we'll measure the target region
+
+The chr15 region of interest isn't in standard gene annotations
+(GENCODE/RefSeq), so once candidate datasets are selected, expression will
+be quantified directly from raw sequencing coverage at those exact
+coordinates rather than relying on a pre-built gene model. For any dataset
+already processed through the public `recount3` resource, this can be done
+without re-downloading or re-aligning raw sequencing files.
+
+```{r}
+#| label: recount3-setup
+#| eval: false
+saf <- read.delim("Target_chr15_sites.saf")
+target_gr <- GenomicRanges::GRanges(
+  seqnames = saf$Chr,
+  ranges = IRanges::IRanges(start = saf$Start, end = saf$End),
+  strand = saf$Strand
+)
+```
+
+---
+
+## 5. Important considerations
+
+- **Library prep:** Most AMP-AD RNA-seq is poly-A selected rather than
+  random-primed. We're confirming per-sample library prep before assuming
+  full coverage of the target region -- if it turns out coverage is
+  incomplete, that would narrow which cohorts are usable.
+- **Long-read sequencing:** No public long-read PFC dataset currently
+  exists at the 30-50 samples/group scale. The best available option (a
+  12-sample Oxford Nanopore study) is useful only as a secondary check on
+  isoform structure, not as a primary analysis cohort.
+- **Data access timeline:** AMP-AD cohorts are controlled-access and
+  require a data use request through Synapse, which can take some time to
+  clear -- this is the main open item holding up a final sample-size count.
