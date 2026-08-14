@@ -1,0 +1,2 @@
+pmid,title,accession(s),repository,n_cases,n_controls,tissue_region,assay_type,library_prep,verification_notes,confidence
+39693632,A dataset profiling the multiomic landscape of the prefrontal cortex in amyotrophic lateral sclerosis.,,GEO,,,prefrontal cortex,bulk,total/small RNA,library_sel=True; case_ctrl=True,low

@@ -55,6 +55,21 @@ DISEASE_EXCLUDE_SYNONYMS = [
     r"lewy body dementia", r"parkinson",
 ]
 
+LIBRARY_SELECTION_PATTERNS = [
+    r"total\s*RNA",
+    r"small\s*RNA",
+    r"mirna",
+    r"size\s*selected",
+]
+
+CASE_CONTROL_PATTERNS = [
+    r"\bcase\b",
+    r"\bcontrol\b",
+    r"\bAD\b",
+    r"\bhealthy\b",
+    r"\bcognitively\s*normal\b",
+]
+
 SINGLE_CELL_SYNONYMS = [
     r"single.cell", r"single.nuclei", r"single.nucleus", r"snrna",
     r"scrna", r"10x genomics", r"sn-rna", r"sc-rna",
@@ -109,13 +124,15 @@ def main():
     if len(raw):
         raw = raw[raw["organism_name"] == "Homo sapiens"]
         raw = raw[raw["library_strategy"].str.contains("RNA-Seq", case=False, na=False)]
+        # Keep only runs with library selection that retains small RNAs (total/small RNA, miRNA, size‑selected)
+        raw = raw[ raw["library_selection"].isna() | raw["library_selection"].str.contains("total|small|mirna|size", case=False, na=False) ]
     print(f"After human + RNA-seq filter: {len(raw)}")
 
     # -------------------------------------------------------------
     # 4. Concept matching across every available text field
     # -------------------------------------------------------------
-    text_cols = [c for c in ["study_title", "experiment_title", "experiment_desc", "sample_title"]
-                 if c in raw.columns]
+    text_cols = [c for c in ["study_title", "experiment_title", "experiment_desc", "sample_title", "sample_attribute"]
+                  if c in raw.columns]
 
     def row_text(row):
         return " | ".join(str(row[c]) for c in text_cols if pd.notna(row[c]))
@@ -128,6 +145,7 @@ def main():
         raw["disease_exclude_flag"] = raw["_all_text"].apply(lambda t: matches_any(t, DISEASE_EXCLUDE_SYNONYMS))
         raw["likely_single_cell"] = raw["_all_text"].apply(lambda t: matches_any(t, SINGLE_CELL_SYNONYMS))
         raw["likely_specialized_assay"] = raw["_all_text"].apply(lambda t: matches_any(t, SPECIALIZED_ASSAY_SYNONYMS))
+        raw["case_control_match"] = raw["_all_text"].apply(lambda t: matches_any(t, CASE_CONTROL_PATTERNS))
 
     candidates = raw[raw["tissue_match"]] if len(raw) else raw
     print(f"After tissue-concept match (any synonym, any field): {len(candidates)}")
@@ -149,8 +167,10 @@ def main():
                 instrument_models=("instrument_model", lambda x: sorted(set(x))),
             )
             .reset_index()
-            .sort_values("n_samples", ascending=False)
-        )
+                .sort_values("n_samples", ascending=False)
+              )
+        # Keep only studies with at least 30 total samples (approximate target)
+        summary = summary[summary["n_samples"] >= 30]
     else:
         summary = pd.DataFrame()
 

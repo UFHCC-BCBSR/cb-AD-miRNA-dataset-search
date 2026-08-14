@@ -47,6 +47,21 @@ RETMAX = 300
 #    usable case-control bulk study from a staging/single-cell one,
 #    based on what SRA metadata has repeatedly failed to surface.
 # ---------------------------------------------------------------------
+LIBRARY_SELECTION_PATTERNS = [
+    r"total\s*RNA",
+    r"small\s*RNA",
+    r"mirna",
+    r"size\s*selected",
+]
+
+CASE_CONTROL_PATTERNS = [
+    r"\bcase\b",
+    r"\bcontrol\b",
+    r"\bAD\b",
+    r"\bhealthy\b",
+    r"\bcognitively\s*normal\b",
+]
+
 SINGLE_CELL_PATTERNS = [
     r"single.cell", r"single.nuclei", r"single.nucleus", r"snrna",
     r"scrna", r"10x genomics", r"10x chromium", r"dropseq", r"drop-seq",
@@ -260,9 +275,11 @@ def main():
             "title": meta.get("title", ""),
             "year": meta.get("year", ""),
             "journal": meta.get("journal", ""),
-            "likely_single_cell": matches_any(abstract, SINGLE_CELL_PATTERNS),
-            "mentions_control": matches_any(abstract, CONTROL_PATTERNS),
-            "staging_design_signal": matches_any(abstract, STAGING_ONLY_PATTERNS),
+                "likely_single_cell": matches_any(abstract, SINGLE_CELL_PATTERNS),
+                "mentions_control": matches_any(abstract, CONTROL_PATTERNS),
+                "staging_design_signal": matches_any(abstract, STAGING_ONLY_PATTERNS),
+                "library_selection_match": matches_any(abstract, LIBRARY_SELECTION_PATTERNS),
+                "case_control_match": matches_any(abstract, CASE_CONTROL_PATTERNS),
             "sample_size_snippets": find_sample_size_snippets(abstract),
             "pubmed_url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
             "abstract": abstract.strip()[:1000],
@@ -276,6 +293,8 @@ def main():
     # itself isn't too aggressive.
     df["promising"] = (
         df["mentions_control"]
+        & df["case_control_match"]
+        & df["library_selection_match"]
         & ~df["likely_single_cell"]
         & ~df["staging_design_signal"]
     )

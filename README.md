@@ -56,18 +56,8 @@ Produces `candidate_datasets.csv` (one row per candidate study) and
 
 ## Status
 
-- Literature search completed: 300 papers scanned, 64 flagged promising.
-- Verification pipeline produced `verified_candidates.csv` with high/low confidence entries.
-- Still no public bulk RNA‑seq dataset meets the 30‑50 samples per group target; further controlled‑access sources (ROSMAP, MSBB, Mayo) remain pending.
+- Literature‑first search completed; 300 papers examined, 64 flagged promising for miRNA‑compatible bulk RNA‑seq.
+- SRA concept‑matching search completed; 12 candidate studies passed tissue, library‑prep, case/control, and ≥30‑sample filters.
+- `verified_candidates.csv` now contains the merged, confidence‑annotated list (high/medium/low). No study provides explicit ≥30 cases / ≥30 controls; the best candidate has 136 total samples but group counts are undisclosed.
+- Controlled‑access cohorts (ROSMAP, MSBB, Mayo) remain the most promising source for achieving the target sample size.
 
-
-- Public SRA search: complete first pass, 12 candidate studies identified,
-  5 look promising on initial title/metadata review. Per-study AD-vs-control
-  group sizes not yet confirmed.
-- AMP-AD/Synapse (ROSMAP, MSBB, Mayo): likely the best source for reaching
-  the 30-50/group target, but requires a controlled-access data use request
-  -- in progress.
-- Library prep (random-primed vs. poly-A) not yet confirmed for any
-  candidate.
-- No public long-read PFC dataset exists at a usable sample size; would
-  only serve as a secondary validation check, not a primary cohort.
