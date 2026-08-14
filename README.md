@@ -56,6 +56,11 @@ Produces `candidate_datasets.csv` (one row per candidate study) and
 
 ## Status
 
+- Literature search completed: 300 papers scanned, 64 flagged promising.
+- Verification pipeline produced `verified_candidates.csv` with high/low confidence entries.
+- Still no public bulk RNA‑seq dataset meets the 30‑50 samples per group target; further controlled‑access sources (ROSMAP, MSBB, Mayo) remain pending.
+
+
 - Public SRA search: complete first pass, 12 candidate studies identified,
   5 look promising on initial title/metadata review. Per-study AD-vs-control
   group sizes not yet confirmed.

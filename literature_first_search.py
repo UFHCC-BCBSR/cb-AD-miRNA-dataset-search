@@ -81,20 +81,54 @@ def esearch_pubmed(query, retmax):
 
 
 def efetch_abstracts(pmids):
-    """Returns {pmid: abstract_text} for a batch of PMIDs."""
+    """Returns {pmid: abstract_text} for a batch of PMIDs.
+
+    Uses XML (not plain text): PubMed's plaintext abstract format has no
+    reliable per-record delimiter, and splitting on the numbered-list
+    pattern ("1. ", "2. ", ...) silently misaligns every subsequent
+    record in a batch whenever one paper lacks an abstract (or its own
+    text happens to contain a similar pattern) -- confirmed this
+    happened in practice: one row's "abstract" was actually a
+    completely different paper's text. XML explicitly tags each
+    <PubmedArticle> with its own <PMID>, so there's no order-dependent
+    guessing involved.
+    """
+    import xml.etree.ElementTree as ET
+
     out = {}
     for batch in chunked(pmids, 100):
-        r = requests.get(f"{EUTILS}/efetch.fcgi", params={
-            "db": "pubmed", "id": ",".join(batch),
-            "rettype": "abstract", "retmode": "text",
-        }, timeout=TIMEOUT)
-        # PubMed's plain-text abstract format separates records with blank
-        # lines and numbers them "1.", "2.", ... -- split on that pattern.
-        records = re.split(r"\n\d+\.\s", "\n" + r.text)
-        for pmid, rec in zip(batch, records[1:] if len(records) > len(batch) else records):
-            out[pmid] = rec
+        data = post_with_retry_xml(f"{EUTILS}/efetch.fcgi", {
+            "db": "pubmed", "id": batch, "rettype": "abstract", "retmode": "xml",
+        })
+        if data is None:
+            continue
+        try:
+            root = ET.fromstring(data)
+        except ET.ParseError:
+            continue
+        for article in root.findall(".//PubmedArticle"):
+            pmid_el = article.find(".//PMID")
+            if pmid_el is None or not pmid_el.text:
+                continue
+            abstract_parts = [el.text or "" for el in article.findall(".//AbstractText")]
+            out[pmid_el.text] = " ".join(abstract_parts)
         time.sleep(0.4)
     return out
+
+
+def post_with_retry_xml(url, data, retries=3):
+    """Like post_with_retry, but returns raw bytes for XML parsing
+    instead of assuming a JSON response."""
+    for attempt in range(retries):
+        try:
+            r = requests.post(url, data=data, timeout=TIMEOUT)
+            return r.content
+        except requests.exceptions.RequestException as e:
+            if attempt == retries - 1:
+                print(f"    Failed after {retries} attempts: {e}")
+                return None
+            time.sleep(1.5 * (attempt + 1))
+    return None
 
 
 def esummary_pubmed(pmids):
@@ -116,14 +150,34 @@ def esummary_pubmed(pmids):
     return out
 
 
+def post_with_retry(url, data, retries=3):
+    for attempt in range(retries):
+        try:
+            r = requests.post(url, data=data, timeout=TIMEOUT)
+            return r.json()
+        except (requests.exceptions.RequestException, ValueError) as e:
+            if attempt == retries - 1:
+                print(f"    Failed after {retries} attempts: {e}")
+                return {}
+            time.sleep(1.5 * (attempt + 1))
+    return {}
+
+
 def resolve_to_geo(pmids):
-    """Batched PMID -> linked GEO accession lookup (elink + esummary)."""
+    """Batched PMID -> linked GEO accession lookup (elink + esummary).
+
+    Uses POST rather than GET: with many repeated id= params, the GET
+    URL gets long enough that NCBI's server (or a proxy in between) can
+    cut the response short mid-stream (ChunkedEncodingError /
+    "Response ended prematurely"). POST avoids the URL-length issue
+    entirely -- this is NCBI's own recommendation for larger ID batches.
+    """
     gds_uids = []
     pmid_to_uid = {}
-    for batch in chunked(pmids, 200):
-        elink = requests.get(f"{EUTILS}/elink.fcgi", params={
-            "dbfrom": "pubmed", "db": "gds", "id": ",".join(batch), "retmode": "json",
-        }, timeout=TIMEOUT).json()
+    for batch in chunked(pmids, 100):
+        elink = post_with_retry(f"{EUTILS}/elink.fcgi", {
+            "dbfrom": "pubmed", "db": "gds", "id": batch, "retmode": "json",
+        })
         for linkset in elink.get("linksets", []):
             src_pmid = linkset.get("ids", [None])[0]
             for db_block in linkset.get("linksetdbs", []):
@@ -133,10 +187,10 @@ def resolve_to_geo(pmids):
         time.sleep(0.4)
 
     uid_to_acc = {}
-    for batch in chunked(list(set(gds_uids)), 200):
-        esum = requests.get(f"{EUTILS}/esummary.fcgi", params={
-            "db": "gds", "id": ",".join(batch), "retmode": "json",
-        }, timeout=TIMEOUT).json()
+    for batch in chunked(list(set(gds_uids)), 100):
+        esum = post_with_retry(f"{EUTILS}/esummary.fcgi", {
+            "db": "gds", "id": batch, "retmode": "json",
+        })
         result = esum.get("result", {})
         for uid in result.get("uids", []):
             uid_to_acc[uid] = result.get(uid, {}).get("accession", "")
@@ -146,7 +200,32 @@ def resolve_to_geo(pmids):
     for pmid, uids in pmid_to_uid.items():
         accs = sorted(set(uid_to_acc.get(u, "") for u in uids if uid_to_acc.get(u)))
         pmid_to_geo[pmid] = accs
+
+    unresolved = [p for p in pmids if p not in pmid_to_geo]
+    print(f"  Resolved {len(pmid_to_geo)}/{len(pmids)} papers via elink cross-reference "
+          f"({len(unresolved)} unresolved)")
     return pmid_to_geo
+
+
+def fallback_title_search_geo(pmid, title):
+    """For papers with no elink cross-reference, try a direct GEO title
+    search -- catches cases where the PubMed<->GEO link just wasn't
+    indexed, without assuming every unresolved paper has no public data."""
+    if not title:
+        return []
+    # Strip trailing period and quote the title for a closer match
+    query = title.rstrip(".").replace('"', "")
+    r = requests.get(f"{EUTILS}/esearch.fcgi", params={
+        "db": "gds", "term": f'"{query}"[Title]', "retmax": 5, "retmode": "json",
+    }, timeout=TIMEOUT).json()
+    uids = r.get("esearchresult", {}).get("idlist", [])
+    if not uids:
+        return []
+    esum = requests.get(f"{EUTILS}/esummary.fcgi", params={
+        "db": "gds", "id": uids, "retmode": "json",
+    }, timeout=TIMEOUT).json()
+    result = esum.get("result", {})
+    return sorted(set(result.get(u, {}).get("accession", "") for u in result.get("uids", [])))
 
 
 def matches_any(text, patterns):
@@ -205,6 +284,19 @@ def main():
     print("Resolving promising papers to GEO accessions...")
     promising_pmids = df.loc[df["promising"], "pmid"].tolist()
     pmid_to_geo = resolve_to_geo(promising_pmids) if promising_pmids else {}
+
+    still_unresolved = [p for p in promising_pmids if not pmid_to_geo.get(p)]
+    if still_unresolved:
+        print(f"  Trying title-search fallback for {len(still_unresolved)} unresolved papers...")
+        pmid_title = dict(zip(df["pmid"], df["title"]))
+        for pmid in still_unresolved:
+            accs = fallback_title_search_geo(pmid, pmid_title.get(pmid, ""))
+            if accs:
+                pmid_to_geo[pmid] = accs
+            time.sleep(0.4)
+        resolved_by_fallback = sum(1 for p in still_unresolved if pmid_to_geo.get(p))
+        print(f"  Fallback resolved {resolved_by_fallback}/{len(still_unresolved)} additional papers")
+
     df["geo_accessions"] = df["pmid"].map(lambda p: pmid_to_geo.get(p, []))
 
     df.to_csv("candidate_papers.csv", index=False)
