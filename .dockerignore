@@ -1,0 +1,16 @@
+# Exclude VCS and temporary files
+.git
+.venv
+__pycache__
+*.pyc
+
+# Exclude environment files that are not needed in the image
+.env
+*.env
+
+# Exclude local data outputs – they are regenerated at runtime
+candidate_*.csv
+*_detailed.csv
+
+# Exclude the pubapps deployment scripts if any (not needed)
+pubapps/**
