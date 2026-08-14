@@ -56,8 +56,10 @@ Produces `candidate_datasets.csv` (one row per candidate study) and
 
 ## Status
 
-- Literature‑first search completed; 300 papers examined, 64 flagged promising for miRNA‑compatible bulk RNA‑seq.
-- SRA concept‑matching search completed; 12 candidate studies passed tissue, library‑prep, case/control, and ≥30‑sample filters.
-- `verified_candidates.csv` now contains the merged, confidence‑annotated list (high/medium/low). No study provides explicit ≥30 cases / ≥30 controls; the best candidate has 136 total samples but group counts are undisclosed.
-- Controlled‑access cohorts (ROSMAP, MSBB, Mayo) remain the most promising source for achieving the target sample size.
+- Literature‑first search completed; **367 papers examined, 74 flagged promising** for miRNA‑compatible bulk RNA‑seq.
+- SRA concept‑matching search completed; **0 candidate studies** passed tissue, library‑prep, case/control, and sample‑size filters.
+- `verified_candidates.csv` now contains **11 low‑confidence entries** (all GEO studies) with library‑selection details unavailable in abstracts.
+- No public dataset meets the ≥30 cases / ≥30 controls target; the best available studies lack explicit group counts.
+- Controlled‑access cohorts (ROSMAP, MSBB, Mayo) remain the most promising source for achieving the required sample size.
+
 
