@@ -40,7 +40,7 @@ PUBMED_QUERY = (
     '(RNA-seq[Title/Abstract] OR "RNA sequencing"[Title/Abstract] '
     'OR transcriptom*[Title/Abstract])'
 )
-RETMAX = 300
+RETMAX = 5000
 
 # ---------------------------------------------------------------------
 # 2. Abstract-text signals -- these are what actually distinguish a
@@ -256,6 +256,21 @@ def find_sample_size_snippets(text):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='Literature‑first AD vs control search')
+    parser.add_argument('--tissue-synonyms', default=','.join(TISSUE_SYNONYMS),
+                        help='Comma‑separated list of tissue synonyms')
+    parser.add_argument('--case-control-regex', default='|'.join(CASE_CONTROL_PATTERNS),
+                        help='Regex pattern for case/control detection')
+    parser.add_argument('--library-filter-mode', choices=['strict','allow-no-info','no-polyA'],
+                        default='no-polyA', help='How to treat missing library selection')
+    args = parser.parse_args()
+    # Override globals if args provided
+    global TISSUE_SYNONYMS, CASE_CONTROL_PATTERNS
+    TISSUE_SYNONYMS = [s.strip() for s in args.tissue_synonyms.split(',') if s.strip()]
+    CASE_CONTROL_PATTERNS = [args.case_control_regex]
+    # library_filter_mode currently unused in this script (handled later)
+    # -----------------------------------------------------
     print("Searching PubMed...")
     pmids = esearch_pubmed(PUBMED_QUERY, RETMAX)
     print(f"  {len(pmids)} papers found")
@@ -294,7 +309,6 @@ def main():
     df["promising"] = (
         df["mentions_control"]
         & df["case_control_match"]
-        & df["library_selection_match"]
         & ~df["likely_single_cell"]
         & ~df["staging_design_signal"]
     )

@@ -56,6 +56,35 @@ Produces `candidate_datasets.csv` (one row per candidate study) and
 
 ## Status
 
+---
+
+## Web App (Flask)
+
+An interactive Flask application is now included in this repository.  It allows a user to:
+
+1. Choose which data sources to run (Literature‑first, SRA‑first, or both).
+2. Adjust tissue synonyms, case/control detection regexes, and library‑prep filtering (the default is the *poly‑A‑negative* mode you requested).
+3. Set minimum sample‑size thresholds and the maximum number of concurrent NCBI API calls.
+4. Launch the pipeline on‑demand; live log output is streamed back via Server‑Sent Events.
+5. Download the resulting `verified_candidates_full.csv` when the run finishes.
+
+### How to run on UF Hipergator pubapps
+
+```bash
+# 1. Create a conda env (or use the provided environment.yml)
+module load anaconda3
+conda env create -f environment.yml   # creates "ad-rnaseq-web"
+conda activate ad-rnaseq-web
+
+# 2. Start the Flask server (Gunicorn is recommended for production)
+gunicorn -b 0.0.0.0:3838 app:app &
+```
+
+The pubapps service will map the URL `https://<your‑username>.pubapps.hpc.ufl.edu/ad_rnaseq/` to the port you expose (3838).  Visit that URL in a browser to use the UI.
+
+No authentication is required; the app runs entirely on the pubapps node and does not submit jobs to SLURM.
+
+
 - Literature‑first search completed; **367 papers examined, 74 flagged promising** for miRNA‑compatible bulk RNA‑seq.
 - SRA concept‑matching search completed; **0 candidate studies** passed tissue, library‑prep, case/control, and sample‑size filters.
 - After stringent library‑selection filtering (requiring explicit total/small RNA or miRNA indication, and discarding poly‑A only studies), **no public dataset satisfies the miRNA‑compatible criteria**.

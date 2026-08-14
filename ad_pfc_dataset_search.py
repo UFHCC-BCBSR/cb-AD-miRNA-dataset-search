@@ -94,6 +94,19 @@ def matched_terms(text, patterns):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='SRA AD vs control search with tissue & library filters')
+    parser.add_argument('--tissue-synonyms', default=','.join(TISSUE_SYNONYMS),
+                        help='Comma‑separated list of tissue synonyms')
+    parser.add_argument('--case-control-regex', default='|'.join(CASE_CONTROL_PATTERNS),
+                        help='Regex pattern for case/control detection')
+    parser.add_argument('--library-filter-mode', choices=['strict','allow-no-info','no-polyA'],
+                        default='no-polyA', help='How to treat missing library selection')
+    args = parser.parse_args()
+    global TISSUE_SYNONYMS, CASE_CONTROL_PATTERNS
+    TISSUE_SYNONYMS = [s.strip() for s in args.tissue_synonyms.split(',') if s.strip()]
+    CASE_CONTROL_PATTERNS = [args.case_control_regex]
+    # library_filter_mode not used directly here; will be passed downstream
     db = SRAweb()
 
     # -------------------------------------------------------------

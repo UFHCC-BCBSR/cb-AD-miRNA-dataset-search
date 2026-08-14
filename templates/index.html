@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AD vs Control RNA‑seq Candidate Search</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <style>
+        #log { height: 300px; overflow-y: scroll; background:#f8f9fa; padding:10px; border:1px solid #ced4da; }
+    </style>
+</head>
+<body class="container py-4">
+    <h1 class="mb-4">AD vs Control RNA‑seq Candidate Search</h1>
+    <form id="searchForm">
+        <div class="mb-3">
+            <label class="form-label"><strong>Data sources</strong></label><br>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="srcLit" name="srcLit" checked>
+                <label class="form-check-label" for="srcLit">Literature‑first</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="srcSra" name="srcSra" checked>
+                <label class="form-check-label" for="srcSra">SRA‑first</label>
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label"><strong>Tissue synonyms (comma‑separated)</strong></label>
+            <textarea class="form-control" id="tissueSyn" rows="2">prefrontal cortex,dlpfc,ba9,ba10,ba46,frontal cortex,frontal gyrus,middle frontal gyrus,superior frontal gyrus,brodmann area 9,brodmann area 10,pfc</textarea>
+        </div>
+        <div class="mb-3">
+            <label class="form-label"><strong>Library‑prep filter</strong></label><br>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="libFilter" id="filterPolyA" value="no-polyA" checked>
+                <label class="form-check-label" for="filterPolyA">Keep if poly‑A not mentioned</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="libFilter" id="filterStrict" value="strict">
+                <label class="form-check-label" for="filterStrict">Require explicit total/small/miRNA</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="libFilter" id="filterNone" value="allow-no-info">
+                <label class="form-check-label" for="filterNone">No library filter</label>
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label"><strong>Case/Control regex (one regex)</strong></label>
+            <input type="text" class="form-control" id="caseCtrl" value="case|control|AD|healthy|cognitively normal">
+        </div>
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <label class="form-label"><strong>Min total samples</strong></label>
+                <input type="number" class="form-control" id="minTotal" value="30" min="0">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label"><strong>Min cases</strong></label>
+                <input type="number" class="form-control" id="minCases" value="30" min="0">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label"><strong>Min controls</strong></label>
+                <input type="number" class="form-control" id="minControls" value="30" min="0">
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label"><strong>Max parallel API calls (1‑5)</strong></label>
+            <input type="range" class="form-range" id="maxParallel" min="1" max="5" value="2" oninput="document.getElementById('parallelVal').innerText=this.value">
+            <span id="parallelVal">2</span>
+        </div>
+        <button type="submit" class="btn btn-primary">Run Search</button>
+    </form>
+
+    <hr>
+    <h3>Log</h3>
+    <pre id="log"></pre>
+    <div id="downloadArea" class="mt-3" style="display:none;">
+        <a id="downloadLink" class="btn btn-success" href="#" download>Download CSV</a>
+    </div>
+
+    <script>
+        const form = document.getElementById('searchForm');
+        const logEl = document.getElementById('log');
+        const downloadDiv = document.getElementById('downloadArea');
+        const downloadLink = document.getElementById('downloadLink');
+        form.addEventListener('submit', e => {
+            e.preventDefault();
+            logEl.textContent = '';
+            downloadDiv.style.display = 'none';
+            const data = {
+                srcLit: document.getElementById('srcLit').checked,
+                srcSra: document.getElementById('srcSra').checked,
+                tissueSyn: document.getElementById('tissueSyn').value,
+                libFilter: document.querySelector('input[name="libFilter"]:checked').value,
+                caseCtrl: document.getElementById('caseCtrl').value,
+                minTotal: document.getElementById('minTotal').value,
+                minCases: document.getElementById('minCases').value,
+                minControls: document.getElementById('minControls').value,
+                maxParallel: document.getElementById('maxParallel').value
+            };
+            fetch('/run', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            })
+            .then(r => r.json())
+            .then(res => {
+                const eventSource = new EventSource(`/stream/${res.run_id}`);
+                eventSource.onmessage = ev => {
+                    if (ev.data === '__DONE__') {
+                        eventSource.close();
+                        downloadLink.href = `/download/${res.run_id}`;
+                        downloadDiv.style.display = 'block';
+                    } else {
+                        logEl.textContent += ev.data + '\n';
+                        logEl.scrollTop = logEl.scrollHeight;
+                    }
+                };
+            });
+        });
+    </script>
+</body>
+</html>
