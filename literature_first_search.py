@@ -256,6 +256,7 @@ def find_sample_size_snippets(text):
 
 
 def main():
+    global TISSUE_SYNONYMS, CASE_CONTROL_PATTERNS
     import argparse
     parser = argparse.ArgumentParser(description='Literature‑first AD vs control search')
     parser.add_argument('--tissue-synonyms', default=','.join(TISSUE_SYNONYMS),
@@ -266,7 +267,6 @@ def main():
                         default='no-polyA', help='How to treat missing library selection')
     args = parser.parse_args()
     # Override globals if args provided
-    global TISSUE_SYNONYMS, CASE_CONTROL_PATTERNS
     TISSUE_SYNONYMS = [s.strip() for s in args.tissue_synonyms.split(',') if s.strip()]
     CASE_CONTROL_PATTERNS = [args.case_control_regex]
     # library_filter_mode currently unused in this script (handled later)
