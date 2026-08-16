@@ -62,6 +62,9 @@ CASE_CONTROL_PATTERNS = [
     r"\bcognitively\s*normal\b",
 ]
 
+# Tissue synonyms – can be overridden via CLI
+TISSUE_SYNONYMS = []
+
 SINGLE_CELL_PATTERNS = [
     r"single.cell", r"single.nuclei", r"single.nucleus", r"snrna",
     r"scrna", r"10x genomics", r"10x chromium", r"dropseq", r"drop-seq",
