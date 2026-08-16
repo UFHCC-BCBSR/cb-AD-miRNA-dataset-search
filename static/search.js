@@ -2,10 +2,17 @@ const form = document.getElementById('searchForm');
 const logEl = document.getElementById('log');
 const downloadDiv = document.getElementById('downloadArea');
 const downloadLink = document.getElementById('downloadLink');
+const maxParallel = document.getElementById('maxParallel');
+const parallelVal = document.getElementById('parallelVal');
+
+maxParallel.addEventListener('input', () => {
+    parallelVal.textContent = maxParallel.value;
+});
+
 form.addEventListener('submit', e => {
     e.preventDefault();
     logEl.textContent = '';
-    downloadDiv.style.display = 'none';
+    downloadDiv.classList.add('hidden');
     const data = {
         srcLit: document.getElementById('srcLit').checked,
         srcSra: document.getElementById('srcSra').checked,
@@ -15,7 +22,7 @@ form.addEventListener('submit', e => {
         minTotal: document.getElementById('minTotal').value,
         minCases: document.getElementById('minCases').value,
         minControls: document.getElementById('minControls').value,
-        maxParallel: document.getElementById('maxParallel').value
+        maxParallel: maxParallel.value
     };
     fetch('run', {
         method: 'POST',
@@ -28,8 +35,8 @@ form.addEventListener('submit', e => {
         eventSource.onmessage = ev => {
             if (ev.data === '__DONE__') {
                 eventSource.close();
-                downloadLink.href = `/download/${res.run_id}`;
-                downloadDiv.style.display = 'block';
+                downloadLink.href = `download/${res.run_id}`;
+                downloadDiv.classList.remove('hidden');
             } else {
                 logEl.textContent += ev.data + '\n';
                 logEl.scrollTop = logEl.scrollHeight;
