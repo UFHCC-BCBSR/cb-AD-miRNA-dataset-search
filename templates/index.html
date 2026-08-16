@@ -101,7 +101,7 @@
             })
             .then(r => r.json())
             .then(res => {
-                const eventSource = new EventSource(`/stream/${res.run_id}`);
+                const eventSource = new EventSource(`stream/${res.run_id}`);
                 eventSource.onmessage = ev => {
                     if (ev.data === '__DONE__') {
                         eventSource.close();
