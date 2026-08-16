@@ -2,6 +2,7 @@
 .venv/
 __pycache__/
 *.pyc
+opencode_prompt.md
 
 # R
 .Rproj.user/
