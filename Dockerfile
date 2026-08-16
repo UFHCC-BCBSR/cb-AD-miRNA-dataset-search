@@ -8,6 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc libpq-dev libxml2-dev libxslt1-dev && \
     rm -rf /var/lib/apt/lists/*
 
+# Install Python dependencies as root so they go to /usr/local/bin
+RUN pip install --no-cache-dir flask gunicorn pandas requests lxml pysradb
+
 # Create a non‑root user (recommended on Hipergator)
 RUN useradd -m appuser
 USER appuser
@@ -15,10 +18,6 @@ WORKDIR /home/appuser/app
 
 # Copy repository contents (excluding .git, .venv, etc.)
 COPY --chown=appuser . .
-
-# Install Python dependencies (Flask, pandas, requests, lxml, pysradb, gunicorn)
-RUN pip install --no-cache-dir flask gunicorn pandas requests lxml pysradb
-ENV PATH="/usr/local/bin:${PATH}"
 
 # Expose the port the Flask app will listen on (pubapps forwards this)
 EXPOSE 3838
