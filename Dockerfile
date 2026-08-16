@@ -18,6 +18,7 @@ COPY --chown=appuser . .
 
 # Install Python dependencies (Flask, pandas, requests, lxml, pysradb, gunicorn)
 RUN pip install --no-cache-dir flask gunicorn pandas requests lxml pysradb
+ENV PATH="/usr/local/bin:${PATH}"
 
 # Expose the port the Flask app will listen on (pubapps forwards this)
 EXPOSE 3838
