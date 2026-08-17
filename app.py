@@ -90,6 +90,25 @@ def start_pipeline(run_id, params):
 def index():
     return render_template('index.html')
 
+@app.route('/preview_patterns')
+def preview_patterns():
+    condition = request.args.get('condition', '')
+    tissue = request.args.get('tissue', '')
+    tissue_terms = [s.strip() for s in tissue.split(',') if s.strip()]
+    try:
+        import sys as _sys
+        _sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+        from ad_pfc_dataset_search import (
+            condition_to_sra_queries, condition_to_case_patterns)
+        from literature_first_search import condition_to_pubmed_query
+        return jsonify({
+            'sra_queries': condition_to_sra_queries(condition),
+            'case_patterns': condition_to_case_patterns(condition),
+            'pubmed_query': condition_to_pubmed_query(condition, tissue_terms),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/run', methods=['POST'])
 def run():
     data = request.get_json()

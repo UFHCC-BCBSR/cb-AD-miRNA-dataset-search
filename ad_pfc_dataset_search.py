@@ -210,9 +210,11 @@ def main():
         n_before_lib = len(raw)
         raw = raw[raw["organism_name"] == "Homo sapiens"]
         if allowed_strategy is not None:
-            raw = raw[raw["library_strategy"].fillna("").str.lower().isin(allowed_strategy)]
+            mask = raw["library_strategy"].isna() | raw["library_strategy"].str.lower().isin(allowed_strategy)
+            raw = raw[mask]
         if allowed_selection is not None:
-            raw = raw[raw["library_selection"].fillna("").str.lower().isin(allowed_selection)]
+            mask = raw["library_selection"].isna() | raw["library_selection"].str.lower().isin(allowed_selection)
+            raw = raw[mask]
         n_after_lib = len(raw)
         print(f"Library filter (strategy={args.lib_strategy}, selection={args.lib_selection}): {n_before_lib} -> {n_after_lib}")
     print(f"After human + library filter: {len(raw)}")
@@ -322,9 +324,12 @@ def main():
     n_after_human_rnaseq = len(raw) if len(raw) else 0
     n_tissue = len(candidates)
     n_final = len(summary)
+    n_blank_tissue = (len(raw) - (raw["biosource"] != "").sum()) if len(raw) else 0
+    n_tissue_from_bio = (raw["biosource"] != "").sum() if len(raw) else 0
     print("=== REGRESSION METRICS ===")
     print(f"SRA: runs_deduped={n_raw} | after_human_rnaseq={n_after_human_rnaseq} "
           f"| after_tissue={n_tissue} | final_datasets={n_final}")
+    print(f"  tissue_blank_fields={n_blank_tissue} | tissue_from_metadata={n_tissue_from_bio}")
     print("==========================")
 
 

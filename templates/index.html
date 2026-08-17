@@ -2,95 +2,158 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Case‑Control RNA‑seq Candidate Search</title>
+    <title>Case&#8209;Control RNA&#8209;seq Candidate Search</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <style>
         #log { height: 300px; overflow-y: scroll; background:#f8f9fa; padding:10px; border:1px solid #ced4da; }
         .hidden { display:none; }
+        #patternPreview { font-size: 13px; }
+        #summaryPanel .metric-val { font-size: 1.5rem; font-weight: 700; }
+        #summaryPanel .metric-label { font-size: 0.8rem; color: #6c757d; }
     </style>
 </head>
 <body class="container py-4">
-    <h1 class="mb-4">Case‑Control RNA‑seq Candidate Search</h1>
+    <h1 class="mb-4">Case&#8209;Control RNA&#8209;seq Candidate Search</h1>
+
+    <details open class="mb-3">
+        <summary class="fw-bold" style="cursor:pointer">About</summary>
+        <div class="mt-2">
+            <p>Finds public RNA-seq datasets for case-control comparisons &mdash; e.g. Alzheimer's
+            vs. controls in prefrontal cortex. Returns a shortlist of candidate studies to
+            review by hand. Does not download or analyze data.</p>
+            <p><strong>SRA-first</strong> &mdash; Broad disease queries against SRA, then filters each run by
+            organism, library strategy, selection, and tissue. Tissue comes from BioSample
+            source_name, since SRA titles rarely mention it.</p>
+            <p><strong>Literature-first</strong> &mdash; PubMed search for the condition, then resolves papers to
+            GEO accessions via elink or title match, and reads library prep and sample
+            counts from the GEO record.</p>
+        </div>
+    </details>
+    <p class="text-muted mb-4" style="font-size:0.9rem"><strong>Note:</strong> The two paths produce separate outputs and are not merged. Case/control
+    group sizes are unreliable in archive metadata &mdash; verify against the paper.</p>
+
     <form id="searchForm">
-        <div class="mb-3">
-            <p class="form-label fw-bold mb-2"><strong>Data sources</strong></p>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" id="srcLit" name="srcLit" checked>
-                <label class="form-check-label" for="srcLit">Literature‑first</label>
-            </div>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" id="srcSra" name="srcSra" checked>
-                <label class="form-check-label" for="srcSra">SRA‑first</label>
+
+        <!-- Section 1: Search scope -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Search scope</h5>
+                <div class="mb-4">
+                    <label class="form-label fw-bold mb-1">Data sources</label>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="srcLit" name="srcLit" checked>
+                        <label class="form-check-label" for="srcLit">Literature&#8209;first</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="srcSra" name="srcSra" checked>
+                        <label class="form-check-label" for="srcSra">SRA&#8209;first</label>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label fw-bold mb-1" for="condition">Condition of interest</label>
+                    <input type="text" class="form-control" id="condition"
+                           placeholder="e.g., Alzheimer&#39;s disease, breast cancer"
+                           value="Alzheimer's disease">
+                    <div class="form-text">The app generates search terms and detection patterns from this automatically.</div>
+                    <div id="patternPreview" class="mt-2 p-2 bg-light border rounded font-monospace small" style="display:none">
+                        <div><strong>SRA queries:</strong> <span id="prevSra"></span></div>
+                        <div><strong>Case patterns:</strong> <span id="prevCase"></span></div>
+                        <div><strong>PubMed query:</strong> <span id="prevPubMed" class="text-break"></span></div>
+                        <div><strong>Control patterns &rarr; </strong><span id="prevControl" class="text-danger">none generated</span></div>
+                    </div>
+                </div>
+
+                <div class="mb-0">
+                    <label class="form-label fw-bold mb-1">Organism</label>
+                    <div class="form-text mb-1">SRA: exact match on organism_name. Literature: PubMed MeSH plus title check.</div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="humanOnly" name="humanOnly" checked>
+                        <label class="form-check-label" for="humanOnly">Human only</label>
+                    </div>
+                </div>
             </div>
         </div>
-        <div class="mb-3">
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="humanOnly" name="humanOnly" checked>
-                <label class="form-check-label" for="humanOnly"><strong>Human only</strong> — exclude mouse/rat/macaque studies (PubMed MeSH + title check)</label>
+
+        <!-- Section 2: Run filters -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Run filters</h5>
+                <p class="text-muted mb-3" style="font-size:0.85rem">Applied to individual SRA runs before grouping into studies.</p>
+
+                <div class="mb-4">
+                    <label class="form-label fw-bold mb-1">Library strategy</label>
+                    <div class="form-text mb-1">The assay type declared by the submitter (miRNA-Seq, RNA-Seq, ncRNA-Seq). Describes what the experiment was.</div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="libStrategy" id="libStratRNA" value="RNA-Seq" checked>
+                        <label class="form-check-label" for="libStratRNA">RNA-Seq</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="libStrategy" id="libStratNcRNA" value="ncRNA-Seq" checked>
+                        <label class="form-check-label" for="libStratNcRNA">ncRNA-Seq</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="libStrategy" id="libStratMirna" value="miRNA-Seq">
+                        <label class="form-check-label" for="libStratMirna">miRNA-Seq</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="libStrategy" id="libStratTotal" value="Total RNA-Seq">
+                        <label class="form-check-label" for="libStratTotal">Total RNA-Seq</label>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label fw-bold mb-1">Library selection</label>
+                    <div class="form-text mb-1">The enrichment method used at the bench (size fractionation, PolyA, cDNA). Describes which molecules survived into the library. PolyA capture removes miRNAs; size fractionation retains them.</div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="libSelection" id="libSelCdna" value="cDNA" checked>
+                        <label class="form-check-label" for="libSelCdna">cDNA</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="libSelection" id="libSelPolyA" value="PolyA">
+                        <label class="form-check-label" for="libSelPolyA">PolyA</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="libSelection" id="libSelSize" value="size fractionation" checked>
+                        <label class="form-check-label" for="libSelSize">Size fractionation</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="libSelection" id="libSelOther" value="other">
+                        <label class="form-check-label" for="libSelOther">Other</label>
+                    </div>
+                    <div class="form-text">Runs with no value for either field are kept.</div>
+                </div>
+
+                <div class="mb-0">
+                    <label class="form-label fw-bold mb-1" for="tissueSyn">Tissue terms</label>
+                    <div class="form-text mb-1">Case-insensitive substring match against BioSample source_name, study title,
+                        experiment title, experiment description, and sample title.</div>
+                    <textarea class="form-control" id="tissueSyn" rows="2">prefrontal cortex,dlpfc,ba9,ba10,ba46,frontal cortex,frontal gyrus,middle frontal gyrus,superior frontal gyrus,brodmann area 9,brodmann area 10,pfc</textarea>
+                </div>
             </div>
         </div>
-        <div class="mb-3">
-            <label class="form-label" for="tissueSyn"><strong>Tissue synonyms (comma‑separated)</strong></label>
-            <textarea class="form-control" id="tissueSyn" rows="2">prefrontal cortex,dlpfc,ba9,ba10,ba46,frontal cortex,frontal gyrus,middle frontal gyrus,superior frontal gyrus,brodmann area 9,brodmann area 10,pfc</textarea>
+
+        <!-- Section 3: Study thresholds -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Study thresholds</h5>
+                <p class="text-muted mb-3" style="font-size:0.85rem">Applied after runs are grouped by study accession.</p>
+                <div class="mb-0">
+                    <label class="form-label fw-bold mb-1" for="minTotal">Min distinct samples per study</label>
+                    <div class="form-text mb-1">Counts unique sample accessions, not runs. One sample may have several runs.</div>
+                    <input type="number" class="form-control" id="minTotal" value="30" min="0" style="max-width:120px">
+                </div>
+            </div>
         </div>
-        <div class="mb-3">
-            <p class="form-label fw-bold mb-2"><strong>Library strategy (SRA controlled vocabulary)</strong></p>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" name="libStrategy" id="libStratRNA" value="RNA-Seq" checked>
-                <label class="form-check-label" for="libStratRNA">RNA-Seq</label>
-            </div>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" name="libStrategy" id="libStratNcRNA" value="ncRNA-Seq" checked>
-                <label class="form-check-label" for="libStratNcRNA">ncRNA-Seq</label>
-            </div>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" name="libStrategy" id="libStratMirna" value="miRNA-Seq">
-                <label class="form-check-label" for="libStratMirna">miRNA-Seq</label>
-            </div>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" name="libStrategy" id="libStratTotal" value="Total RNA-Seq">
-                <label class="form-check-label" for="libStratTotal">Total RNA-Seq</label>
-            </div>
-            <div class="form-text">Which SRA library strategies to include. Runs with other strategies are excluded.</div>
-        </div>
-        <div class="mb-3">
-            <p class="form-label fw-bold mb-2"><strong>Library selection (accepted prep methods)</strong></p>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" name="libSelection" id="libSelCdna" value="cDNA" checked>
-                <label class="form-check-label" for="libSelCdna">cDNA</label>
-            </div>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" name="libSelection" id="libSelPolyA" value="PolyA">
-                <label class="form-check-label" for="libSelPolyA">PolyA</label>
-            </div>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" name="libSelection" id="libSelSize" value="size fractionation" checked>
-                <label class="form-check-label" for="libSelSize">Size fractionation</label>
-            </div>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" name="libSelection" id="libSelOther" value="other">
-                <label class="form-check-label" for="libSelOther">Other</label>
-            </div>
-            <div class="form-text">Which library selection methods to include. Runs with NaN or unlisted values are kept.</div>
-        </div>
-        <div class="mb-3">
-            <label class="form-label" for="condition"><strong>Condition of interest</strong></label>
-            <input type="text" class="form-control" id="condition" placeholder="e.g., Alzheimer&#39;s disease, breast cancer" value="Alzheimer's disease">
-            <div class="form-text">The app generates search terms and detection patterns from this automatically.</div>
-        </div>
-        <div class="mb-3">
-            <label class="form-label" for="minTotal"><strong>Min distinct samples per study</strong></label>
-            <input type="number" class="form-control" id="minTotal" value="30" min="0">
-        </div>
-        <div class="mb-3">
-            <label class="form-label" for="maxParallel"><strong>Max parallel API calls (1‑5)</strong></label>
-            <input type="range" class="form-range" id="maxParallel" min="1" max="5" value="2">
-            <span id="parallelVal">2</span>
-        </div>
+
         <button type="submit" class="btn btn-primary">Run Search</button>
     </form>
 
-    <hr>
+    <hr class="my-4">
+    <div id="summaryPanel" class="mb-3 p-3 border rounded" style="display:none">
+        <h5>Results</h5>
+        <div class="row text-center" id="summaryMetrics"></div>
+    </div>
     <h3>Log</h3>
     <pre id="log"></pre>
     <div id="downloadArea" class="mt-3 hidden">
