@@ -321,8 +321,14 @@ def main():
               )
         # Keep only studies with at least 30 total samples (approximate target)
         summary = summary[summary["n_samples"] >= args.min_total]
+        summary["study_url"] = summary["study_accession"].apply(
+            lambda a: f"https://www.ncbi.nlm.nih.gov/sra/{a}" if a else "")
     else:
         summary = pd.DataFrame()
+
+    if len(candidates):
+        candidates["run_url"] = candidates["run_accession"].apply(
+            lambda a: f"https://www.ncbi.nlm.nih.gov/sra/{a}" if pd.notna(a) and a else "")
 
     summary.to_csv("candidate_datasets.csv", index=False)
     candidates.to_csv("candidate_datasets_full_runs.csv", index=False)

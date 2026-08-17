@@ -259,6 +259,8 @@ def main():
                 'library_prep': info['library_selection'],
                 'verification_notes': verification,
                 'confidence': confidence,
+                'pmid_url': f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else '',
+                'geo_url': f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={gse}" if gse else '',
             })
     # Write CSV
     out_df = pd.DataFrame(out_rows)
