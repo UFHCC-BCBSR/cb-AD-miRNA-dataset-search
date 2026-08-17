@@ -104,12 +104,23 @@ def stream(run_id):
             yield f'data: {line}\n\n'
             if line == '__DONE__':
                 break
-    headers = {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'X-Accel-Buffering': 'no',
-    }
-    return Response(generate(), headers=headers)
+    return Response(generate(), mimetype='text/event-stream')
+
+@app.route('/poll/<run_id>')
+def poll(run_id):
+    if run_id not in RUNS:
+        return jsonify({'error': 'Invalid run id'}), 404
+    q = RUNS[run_id]['queue']
+    lines = []
+    while not q.empty():
+        try:
+            line = q.get_nowait()
+            lines.append(line)
+            if line == '__DONE__':
+                break
+        except queue.Empty:
+            break
+    return jsonify({'lines': lines, 'done': lines[-1] == '__DONE__' if lines else False})
 
 @app.route('/download/<run_id>')
 def download(run_id):
