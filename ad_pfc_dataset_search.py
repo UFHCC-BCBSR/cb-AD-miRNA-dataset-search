@@ -79,7 +79,9 @@ SPECIALIZED_ASSAY_SYNONYMS = [
 def matches_any(text, patterns):
     if not isinstance(text, str):
         return False
-    return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+    text = text.replace('\u2018', "'").replace('\u2019', "'")
+    return any(re.search(p.replace('\u2018', "'").replace('\u2019', "'"),
+                         text, re.IGNORECASE) for p in patterns)
 
 
 def matched_terms(text, patterns):
@@ -194,17 +196,29 @@ def main():
     raw = pd.concat(raw_hits, ignore_index=True) if raw_hits else pd.DataFrame()
     if len(raw) and "run_accession" in raw.columns:
         raw = raw.drop_duplicates(subset=["run_accession"])
-    print(f"Total unique runs after dedup: {len(raw)}")
+    n_raw = len(raw)
+    print(f"Total unique runs after dedup: {n_raw}")
 
     # -------------------------------------------------------------
-    # 3. Hard filters: human, RNA-seq only
+    # 3. Hard filters: human, RNA-seq only, library selection
     # -------------------------------------------------------------
     if len(raw):
+        n_before_lib = len(raw)
         raw = raw[raw["organism_name"] == "Homo sapiens"]
         raw = raw[raw["library_strategy"].str.contains("RNA-Seq", case=False, na=False)]
-        # Keep only runs with library selection that retains small RNAs (total/small RNA, miRNA, size‑selected)
-        raw = raw[ raw["library_selection"].isna() | raw["library_selection"].str.contains("total|small|mirna|size", case=False, na=False) ]
-    print(f"After human + RNA-seq filter: {len(raw)}")
+        if args.library_filter_mode == "allow-no-info":
+            pass  # no library_selection filter
+        elif args.library_filter_mode == "no-polyA":
+            raw = raw[raw["library_selection"].isna() |
+                      ~raw["library_selection"].str.contains(
+                          "polyA|poly A|poly A selection", case=False, na=False)]
+        else:  # strict
+            raw = raw[raw["library_selection"].isna() |
+                      raw["library_selection"].str.contains(
+                          "total|small|mirna|size", case=False, na=False)]
+        n_after_lib = len(raw)
+        print(f"Library filter ({args.library_filter_mode}): {n_before_lib} -> {n_after_lib}")
+    print(f"After human + RNA-seq + library filter: {len(raw)}")
 
     # -------------------------------------------------------------
     # 3b. Fetch tissue info from BioSample (source_name attribute)
@@ -295,12 +309,11 @@ def main():
         print(summary[cols].to_string(index=False))
 
     print()
-    n_deduped = len(raw) if len(raw) else 0
-    n_human_rnaseq = n_deduped
+    n_after_human_rnaseq = len(raw) if len(raw) else 0
     n_tissue = len(candidates)
     n_final = len(summary)
     print("=== REGRESSION METRICS ===")
-    print(f"SRA: runs_deduped={n_deduped} | after_human_rnaseq={n_human_rnaseq} "
+    print(f"SRA: runs_deduped={n_raw} | after_human_rnaseq={n_after_human_rnaseq} "
           f"| after_tissue={n_tissue} | final_datasets={n_final}")
     print("==========================")
 

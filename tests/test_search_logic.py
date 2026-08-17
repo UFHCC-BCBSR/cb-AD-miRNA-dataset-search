@@ -136,6 +136,15 @@ class TestConditionToCasePatterns:
         sra = sra_condition_to_case_patterns(c)
         assert lit == sra
 
+    def test_curly_apostrophe_matches(self):
+        p = condition_to_case_patterns("Alzheimer's disease")
+        assert matches_any("Alzheimer\u2019s disease study", p)
+        assert matches_any("Alzheimer's disease study", p)
+
+    def test_curly_apostrophe_in_matches_any(self):
+        assert matches_any("Alzheimer\u2019s disease", ["Alzheimer's disease"])
+        assert matches_any("Alzheimer's disease", ["Alzheimer\u2019s disease"])
+
 
 # -------------------------------------------------------------------
 # condition_to_sra_queries

@@ -491,7 +491,9 @@ def fallback_title_search_geo(pmid, title):
 def matches_any(text, patterns):
     if not isinstance(text, str):
         return False
-    return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+    text = text.replace('\u2018', "'").replace('\u2019', "'")
+    return any(re.search(p.replace('\u2018', "'").replace('\u2019', "'"),
+                         text, re.IGNORECASE) for p in patterns)
 
 
 def find_sample_size_snippets(text):

@@ -53,19 +53,9 @@
             <input type="text" class="form-control" id="condition" placeholder="e.g., Alzheimer&#39;s disease, breast cancer" value="Alzheimer's disease">
             <div class="form-text">The app generates search terms and detection patterns from this automatically.</div>
         </div>
-        <div class="row">
-            <div class="col-md-4 mb-3">
-                <label class="form-label" for="minTotal"><strong>Min total samples</strong></label>
-                <input type="number" class="form-control" id="minTotal" value="30" min="0">
-            </div>
-            <div class="col-md-4 mb-3">
-                <label class="form-label" for="minCases"><strong>Min cases</strong></label>
-                <input type="number" class="form-control" id="minCases" value="30" min="0">
-            </div>
-            <div class="col-md-4 mb-3">
-                <label class="form-label" for="minControls"><strong>Min controls</strong></label>
-                <input type="number" class="form-control" id="minControls" value="30" min="0">
-            </div>
+        <div class="mb-3">
+            <label class="form-label" for="minTotal"><strong>Min total samples per study</strong></label>
+            <input type="number" class="form-control" id="minTotal" value="30" min="0">
         </div>
         <div class="mb-3">
             <label class="form-label" for="maxParallel"><strong>Max parallel API calls (1‑5)</strong></label>

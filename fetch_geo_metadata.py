@@ -15,7 +15,7 @@ fetch_geo_metadata.py
 - Writes the final `verified_candidates_full.csv`.
 """
 
-import re, json, time, sys
+import re, json, time, sys, ast
 import pandas as pd
 import requests
 import xml.etree.ElementTree as ET
@@ -68,7 +68,9 @@ SINGLE_CELL_PATTERNS = [
 def matches_any(text, patterns):
     if not isinstance(text, str):
         return False
-    return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+    text = text.replace('\u2018', "'").replace('\u2019', "'")
+    return any(re.search(p.replace('\u2018', "'").replace('\u2019', "'"),
+                         text, re.IGNORECASE) for p in patterns)
 
 def fetch_geo_by_title(title):
     # Search GEO for a title match (exact phrase)
@@ -148,11 +150,9 @@ def parse_geo_xml(content):
     }
 
 def compute_confidence(rec):
-    # Use the thresholds supplied via CLI (globals set in main())
-    if rec['n_cases'] >= MIN_CASES and rec['n_controls'] >= MIN_CONTROLS:
-        return 'high'
+    # Use the threshold supplied via CLI (global set in main())
     if rec['n_samples'] >= MIN_TOTAL:
-        return 'medium'
+        return 'high'
     return 'low'
 
 def main():
@@ -160,30 +160,28 @@ def main():
     parser = argparse.ArgumentParser(description='Fetch GEO metadata and filter candidates')
     parser.add_argument('--min-total', type=int, default=30,
                         help='Minimum total sample count')
-    parser.add_argument('--min-cases', type=int, default=30,
-                        help='Minimum case count')
-    parser.add_argument('--min-controls', type=int, default=30,
-                        help='Minimum control count')
     parser.add_argument('--library-filter-mode', choices=['strict','allow-no-info','no-polyA'],
                         default='no-polyA', help='Library selection handling')
     parser.add_argument('--max-parallel', type=int, default=2,
                         help='Maximum concurrent API calls (respect NCBI rate limits)')
     args = parser.parse_args()
     # Set globals for thresholds
-    global MIN_TOTAL, MIN_CASES, MIN_CONTROLS, LIBRARY_FILTER_MODE, MAX_PARALLEL
+    global MIN_TOTAL, LIBRARY_FILTER_MODE, MAX_PARALLEL
     MIN_TOTAL = args.min_total
-    MIN_CASES = args.min_cases
-    MIN_CONTROLS = args.min_controls
     LIBRARY_FILTER_MODE = args.library_filter_mode
     MAX_PARALLEL = args.max_parallel
     # -----------------------------------------------------
     cand = pd.read_csv('candidate_papers.csv', dtype=str).fillna('')
-    # Keep only promising rows (promising column exists after our earlier run)
+    print(f"Read {len(cand)} papers from candidate_papers.csv")
+    # Keep only promising rows
     if 'promising' in cand.columns:
-        cand = cand[cand['promising'] == True]
+        cand['promising'] = cand['promising'].astype(str).str.lower().isin(
+            ['true', '1', 'yes'])
+        n_before = len(cand)
+        cand = cand[cand['promising']]
+        print(f"After promising filter: {len(cand)}/{n_before}")
     else:
-        # fallback: we already know we have 74 rows from earlier output
-        pass
+        print("No 'promising' column found — keeping all rows")
     # Resolve GEO accessions for rows lacking them
     for idx, row in cand.iterrows():
         geo = row.get('geo_accessions')
@@ -194,7 +192,7 @@ def main():
         else:
             # Ensure it's stored as list-like string
             try:
-                lst = eval(geo)
+                lst = ast.literal_eval(geo)
                 if isinstance(lst, list):
                     cand.at[idx, 'geo_accessions'] = str(lst)
             except Exception:
@@ -205,7 +203,7 @@ def main():
     all_geo = set()
     for val in cand['geo_accessions']:
         try:
-            lst = eval(val)
+            lst = ast.literal_eval(val)
             all_geo.update(lst)
         except Exception:
             pass
@@ -229,7 +227,7 @@ def main():
         title = row.get('title', '')
         geo_str = row.get('geo_accessions', '[]')
         try:
-            geo_list = eval(geo_str)
+            geo_list = ast.literal_eval(geo_str)
         except Exception:
             geo_list = []
         for gse in geo_list:

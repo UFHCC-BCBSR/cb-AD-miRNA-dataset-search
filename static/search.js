@@ -63,8 +63,6 @@ form.addEventListener('submit', e => {
         libFilter: document.querySelector('input[name="libFilter"]:checked').value,
         condition: document.getElementById('condition').value,
         minTotal: document.getElementById('minTotal').value,
-        minCases: document.getElementById('minCases').value,
-        minControls: document.getElementById('minControls').value,
         maxParallel: maxParallel.value
     };
 

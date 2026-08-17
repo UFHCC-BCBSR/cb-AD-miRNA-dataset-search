@@ -7,7 +7,7 @@ Features:
 * When finished, a download link for verified_candidates_full.csv appears.
 ''' 
 
-import os, uuid, shutil, threading, queue, subprocess, shlex
+import os, uuid, shutil, threading, queue, subprocess, shlex, zipfile, io
 from flask import Flask, request, jsonify, send_from_directory, Response, render_template
 
 app = Flask(__name__)
@@ -29,7 +29,9 @@ def start_pipeline(run_id, params):
         else:
             shutil.copy2(src, dst)
     commands = []
+    sources = []
     if params.get('srcLit'):
+        sources.append('literature')
         lit_cmd = [
             'python', 'literature_first_search.py',
             f"--condition={params['condition']}",
@@ -42,6 +44,7 @@ def start_pipeline(run_id, params):
             lit_cmd.append('--no-human-filter')
         commands.append(lit_cmd)
     if params.get('srcSra'):
+        sources.append('SRA')
         commands.append([
             'python', 'ad_pfc_dataset_search.py',
             f"--condition={params['condition']}",
@@ -50,14 +53,14 @@ def start_pipeline(run_id, params):
             f"--min-total={params['minTotal']}"
         ])
     if params.get('srcLit'):
+        sources.append('GEO verification')
         commands.append([
             'python', 'fetch_geo_metadata.py',
             f"--min-total={params['minTotal']}",
-            f"--min-cases={params['minCases']}",
-            f"--min-controls={params['minControls']}",
             f"--library-filter-mode={params['libFilter']}",
             f"--max-parallel={params['maxParallel']}"
         ])
+    q.put(f"[INFO] Sources: {' + '.join(sources) if sources else 'none'}")
     def worker():
         try:
             for cmd in commands:
@@ -71,6 +74,9 @@ def start_pipeline(run_id, params):
                 if proc.returncode != 0:
                     q.put(f"[ERROR] Command {shlex.join(cmd)} exited with code {proc.returncode}")
                     break
+            csvs = [f for f in os.listdir(temp_dir) if f.endswith('.csv')]
+            if not csvs:
+                q.put("[INFO] No downloadable CSV produced for this run.")
             q.put('__DONE__')
         except Exception as e:
             q.put(f"[EXCEPTION] {e}")
@@ -92,8 +98,6 @@ def run():
         'libFilter': data.get('libFilter', 'no-polyA'),
         'condition': data.get('condition', ''),
         'minTotal': int(data.get('minTotal', 30)),
-        'minCases': int(data.get('minCases', 30)),
-        'minControls': int(data.get('minControls', 30)),
         'maxParallel': int(data.get('maxParallel', 2)),
         'humanOnly': bool(data.get('humanOnly', True)),
     }
@@ -136,10 +140,19 @@ def download(run_id):
     if not info:
         return 'Invalid run id', 404
     directory = info['temp_dir']
-    filename = 'verified_candidates_full.csv'
-    if not os.path.exists(os.path.join(directory, filename)):
-        return 'Result not available', 404
-    return send_from_directory(directory, filename, as_attachment=True)
+    csvs = sorted(f for f in os.listdir(directory) if f.endswith('.csv'))
+    if not csvs:
+        return 'No output files produced for this run.', 404
+    if len(csvs) == 1:
+        return send_from_directory(directory, csvs[0], as_attachment=True)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for f in csvs:
+            zf.write(os.path.join(directory, f), f)
+    buf.seek(0)
+    from flask import send_file
+    return send_file(buf, mimetype='application/zip',
+                     as_attachment=True, download_name='search_results.zip')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3838, debug=False)
