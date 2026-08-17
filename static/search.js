@@ -4,6 +4,10 @@ const downloadDiv = document.getElementById('downloadArea');
 const downloadLink = document.getElementById('downloadLink');
 const maxParallel = document.getElementById('maxParallel');
 const parallelVal = document.getElementById('parallelVal');
+const submitBtn = form.querySelector('button[type="submit"]');
+
+const cfg = JSON.parse(document.getElementById('appConfig').textContent);
+const base = cfg.appPrefix || '';
 
 maxParallel.addEventListener('input', () => {
     parallelVal.textContent = maxParallel.value;
@@ -13,6 +17,9 @@ form.addEventListener('submit', e => {
     e.preventDefault();
     logEl.textContent = '';
     downloadDiv.classList.add('hidden');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Running…';
+
     const data = {
         srcLit: document.getElementById('srcLit').checked,
         srcSra: document.getElementById('srcSra').checked,
@@ -24,23 +31,46 @@ form.addEventListener('submit', e => {
         minControls: document.getElementById('minControls').value,
         maxParallel: maxParallel.value
     };
-    fetch('run', {
+
+    fetch(`${base}/run`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(data)
     })
-    .then(r => r.json())
+    .then(r => {
+        if (!r.ok) {
+            return r.text().then(body => {
+                throw new Error(`POST /run failed (${r.status}): ${body.slice(0, 500)}`);
+            });
+        }
+        return r.json();
+    })
     .then(res => {
-        const eventSource = new EventSource(`stream/${res.run_id}`);
+        const eventSource = new EventSource(`${base}/stream/${res.run_id}`);
+
         eventSource.onmessage = ev => {
             if (ev.data === '__DONE__') {
                 eventSource.close();
-                downloadLink.href = `download/${res.run_id}`;
+                downloadLink.href = `${base}/download/${res.run_id}`;
                 downloadDiv.classList.remove('hidden');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Run Search';
             } else {
                 logEl.textContent += ev.data + '\n';
                 logEl.scrollTop = logEl.scrollHeight;
             }
         };
+
+        eventSource.onerror = () => {
+            eventSource.close();
+            logEl.textContent += '\n[ERROR] Lost connection to server. The stream may have been buffered or the server may have restarted.\n';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Run Search';
+        };
+    })
+    .catch(err => {
+        logEl.textContent += `\n[ERROR] ${err.message}\n`;
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Run Search';
     });
 });

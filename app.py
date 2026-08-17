@@ -104,7 +104,12 @@ def stream(run_id):
             yield f'data: {line}\n\n'
             if line == '__DONE__':
                 break
-    return Response(generate(), mimetype='text/event-stream')
+    headers = {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',
+    }
+    return Response(generate(), headers=headers)
 
 @app.route('/download/<run_id>')
 def download(run_id):
