@@ -300,7 +300,6 @@ def main():
     print("=== REGRESSION METRICS ===")
     print(f"SRA: runs_deduped={n_deduped} | after_human_rnaseq={n_human_rnaseq} "
           f"| after_tissue={n_tissue} | final_datasets={n_final}")
-    print("PubMed: (see literature_first_search.py output)")
     print("==========================")
 
 

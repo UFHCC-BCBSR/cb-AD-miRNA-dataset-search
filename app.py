@@ -48,14 +48,15 @@ def start_pipeline(run_id, params):
             f"--tissue-synonyms={params['tissueSyn']}",
             f"--library-filter-mode={params['libFilter']}"
         ])
-    commands.append([
-        'python', 'fetch_geo_metadata.py',
-        f"--min-total={params['minTotal']}",
-        f"--min-cases={params['minCases']}",
-        f"--min-controls={params['minControls']}",
-        f"--library-filter-mode={params['libFilter']}",
-        f"--max-parallel={params['maxParallel']}"
-    ])
+    if params.get('srcLit'):
+        commands.append([
+            'python', 'fetch_geo_metadata.py',
+            f"--min-total={params['minTotal']}",
+            f"--min-cases={params['minCases']}",
+            f"--min-controls={params['minControls']}",
+            f"--library-filter-mode={params['libFilter']}",
+            f"--max-parallel={params['maxParallel']}"
+        ])
     def worker():
         try:
             for cmd in commands:
