@@ -50,7 +50,11 @@ form.addEventListener('submit', e => {
         return r.json();
     })
     .then(res => {
-        const eventSource = new EventSource(BASE + 'stream/' + res.run_id);
+        logEl.textContent += `run_id: ${res.run_id}\n`;
+        const streamUrl = BASE + 'stream/' + res.run_id;
+        logEl.textContent += `stream URL: ${streamUrl}\n`;
+
+        const eventSource = new EventSource(streamUrl);
 
         eventSource.onmessage = ev => {
             if (ev.data === '__DONE__') {
@@ -66,10 +70,14 @@ form.addEventListener('submit', e => {
         };
 
         eventSource.onerror = () => {
+            const state = eventSource.readyState;
+            const stateLabel = state === 0 ? 'CONNECTING' : state === 1 ? 'OPEN' : 'CLOSED';
+            logEl.textContent += `\n[ERROR] EventSource error — readyState: ${state} (${stateLabel}), url: ${eventSource.url}\n`;
             eventSource.close();
-            logEl.textContent += '\n[ERROR] Lost connection to server. The stream may have been buffered or the server may have restarted.\n';
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Run Search';
+            if (state === 2) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Run Search';
+            }
         };
     })
     .catch(err => {
