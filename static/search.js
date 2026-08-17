@@ -55,12 +55,17 @@ form.addEventListener('submit', e => {
     submitBtn.disabled = true;
     submitBtn.textContent = 'Running…';
 
+    function checkedValues(name) {
+        return [...document.querySelectorAll(`input[name="${name}"]:checked`)].map(el => el.value);
+    }
+
     const data = {
         srcLit: document.getElementById('srcLit').checked,
         srcSra: document.getElementById('srcSra').checked,
         humanOnly: document.getElementById('humanOnly').checked,
         tissueSyn: document.getElementById('tissueSyn').value,
-        libFilter: document.querySelector('input[name="libFilter"]:checked').value,
+        libStrategy: checkedValues('libStrategy'),
+        libSelection: checkedValues('libSelection'),
         condition: document.getElementById('condition').value,
         minTotal: document.getElementById('minTotal').value,
         maxParallel: maxParallel.value

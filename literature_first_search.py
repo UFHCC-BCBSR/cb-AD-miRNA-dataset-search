@@ -566,13 +566,17 @@ def main():
     parser.add_argument('--library-filter-mode',
                         choices=['strict', 'allow-no-info', 'no-polyA'],
                         default='no-polyA',
-                        help='How to treat missing library selection')
+                        help='DEPRECATED: no longer used. Library filtering is now handled by ad_pfc_dataset_search.py')
     parser.add_argument('--human-only', action='store_true', default=True,
                         help='Filter to human studies only (default: on)')
     parser.add_argument('--no-human-filter', dest='human_only',
                         action='store_false',
                         help='Disable human-only filter')
     args = parser.parse_args()
+    import warnings as _warn
+    _warn.warn("--library-filter-mode is deprecated and has no effect; "
+               "library filtering is now handled by ad_pfc_dataset_search.py",
+               DeprecationWarning, stacklevel=2)
     TISSUE_SYNONYMS = [s.strip() for s in
                        args.tissue_synonyms.split(',') if s.strip()]
 

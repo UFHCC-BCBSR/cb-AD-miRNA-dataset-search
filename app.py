@@ -36,7 +36,6 @@ def start_pipeline(run_id, params):
             'python', 'literature_first_search.py',
             f"--condition={params['condition']}",
             f"--tissue-synonyms={params['tissueSyn']}",
-            f"--library-filter-mode={params['libFilter']}"
         ]
         if params.get('humanOnly'):
             lit_cmd.append('--human-only')
@@ -45,19 +44,22 @@ def start_pipeline(run_id, params):
         commands.append(lit_cmd)
     if params.get('srcSra'):
         sources.append('SRA')
-        commands.append([
+        sra_cmd = [
             'python', 'ad_pfc_dataset_search.py',
             f"--condition={params['condition']}",
             f"--tissue-synonyms={params['tissueSyn']}",
-            f"--library-filter-mode={params['libFilter']}",
             f"--min-total={params['minTotal']}"
-        ])
+        ]
+        for strat in params.get('libStrategy', []):
+            sra_cmd.append(f"--lib-strategy={strat}")
+        for sel in params.get('libSelection', []):
+            sra_cmd.append(f"--lib-selection={sel}")
+        commands.append(sra_cmd)
     if params.get('srcLit'):
         sources.append('GEO verification')
         commands.append([
             'python', 'fetch_geo_metadata.py',
             f"--min-total={params['minTotal']}",
-            f"--library-filter-mode={params['libFilter']}",
             f"--max-parallel={params['maxParallel']}"
         ])
     q.put(f"[INFO] Sources: {' + '.join(sources) if sources else 'none'}")
@@ -95,7 +97,8 @@ def run():
         'srcLit': bool(data.get('srcLit', True)),
         'srcSra': bool(data.get('srcSra', True)),
         'tissueSyn': data.get('tissueSyn', ''),
-        'libFilter': data.get('libFilter', 'no-polyA'),
+        'libStrategy': data.get('libStrategy', []),
+        'libSelection': data.get('libSelection', []),
         'condition': data.get('condition', ''),
         'minTotal': int(data.get('minTotal', 30)),
         'maxParallel': int(data.get('maxParallel', 2)),

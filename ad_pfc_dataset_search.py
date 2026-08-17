@@ -162,8 +162,10 @@ def main():
                         help='Disease/condition of interest (e.g., "Alzheimer\'s disease")')
     parser.add_argument('--tissue-synonyms', default=','.join(TISSUE_SYNONYMS),
                         help='Comma‑separated list of tissue synonyms')
-    parser.add_argument('--library-filter-mode', choices=['strict','allow-no-info','no-polyA'],
-                        default='no-polyA', help='How to treat missing library selection')
+    parser.add_argument('--lib-strategy', action='append', default=[],
+                        help='SRA library strategies to include (repeatable, e.g., --lib-strategy=RNA-Seq --lib-strategy=ncRNA-Seq)')
+    parser.add_argument('--lib-selection', action='append', default=[],
+                        help='Library selection methods to include (repeatable, e.g., --lib-selection=cDNA --lib-selection="size fractionation")')
     parser.add_argument('--min-total', type=int, default=30,
                         help='Minimum total samples per study')
     args = parser.parse_args()
@@ -175,7 +177,9 @@ def main():
     print(f"  SRA queries: {broad_queries}")
     print(f"  Case/control patterns: {case_patterns}")
 
-    # library_filter_mode not used directly here; will be passed downstream
+    # library filter args
+    allowed_strategy = set(s.lower() for s in args.lib_strategy) if args.lib_strategy else None
+    allowed_selection = set(s.lower() for s in args.lib_selection) if args.lib_selection else None
     db = SRAweb()
 
     # -------------------------------------------------------------
@@ -205,20 +209,13 @@ def main():
     if len(raw):
         n_before_lib = len(raw)
         raw = raw[raw["organism_name"] == "Homo sapiens"]
-        raw = raw[raw["library_strategy"].str.contains("RNA-Seq", case=False, na=False)]
-        if args.library_filter_mode == "allow-no-info":
-            pass  # no library_selection filter
-        elif args.library_filter_mode == "no-polyA":
-            raw = raw[raw["library_selection"].isna() |
-                      ~raw["library_selection"].str.contains(
-                          "polyA|poly A|poly A selection", case=False, na=False)]
-        else:  # strict
-            raw = raw[raw["library_selection"].isna() |
-                      raw["library_selection"].str.contains(
-                          "total|small|mirna|size", case=False, na=False)]
+        if allowed_strategy is not None:
+            raw = raw[raw["library_strategy"].fillna("").str.lower().isin(allowed_strategy)]
+        if allowed_selection is not None:
+            raw = raw[raw["library_selection"].fillna("").str.lower().isin(allowed_selection)]
         n_after_lib = len(raw)
-        print(f"Library filter ({args.library_filter_mode}): {n_before_lib} -> {n_after_lib}")
-    print(f"After human + RNA-seq + library filter: {len(raw)}")
+        print(f"Library filter (strategy={args.lib_strategy}, selection={args.lib_selection}): {n_before_lib} -> {n_after_lib}")
+    print(f"After human + library filter: {len(raw)}")
 
     # -------------------------------------------------------------
     # 3b. Fetch tissue info from BioSample (source_name attribute)

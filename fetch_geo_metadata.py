@@ -161,10 +161,13 @@ def main():
     parser.add_argument('--min-total', type=int, default=30,
                         help='Minimum total sample count')
     parser.add_argument('--library-filter-mode', choices=['strict','allow-no-info','no-polyA'],
-                        default='no-polyA', help='Library selection handling')
+                        default='no-polyA', help='DEPRECATED: no longer used')
     parser.add_argument('--max-parallel', type=int, default=2,
                         help='Maximum concurrent API calls (respect NCBI rate limits)')
     args = parser.parse_args()
+    import warnings as _warn
+    _warn.warn("--library-filter-mode is deprecated and has no effect.",
+               DeprecationWarning, stacklevel=2)
     # Set globals for thresholds
     global MIN_TOTAL, LIBRARY_FILTER_MODE, MAX_PARALLEL
     MIN_TOTAL = args.min_total

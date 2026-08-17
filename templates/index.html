@@ -34,19 +34,44 @@
             <textarea class="form-control" id="tissueSyn" rows="2">prefrontal cortex,dlpfc,ba9,ba10,ba46,frontal cortex,frontal gyrus,middle frontal gyrus,superior frontal gyrus,brodmann area 9,brodmann area 10,pfc</textarea>
         </div>
         <div class="mb-3">
-            <p class="form-label fw-bold mb-2"><strong>Library‑prep filter</strong></p>
+            <p class="form-label fw-bold mb-2"><strong>Library strategy (SRA controlled vocabulary)</strong></p>
             <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="libFilter" id="filterPolyA" value="no-polyA" checked>
-                <label class="form-check-label" for="filterPolyA">Keep if poly‑A not mentioned</label>
+                <input class="form-check-input" type="checkbox" name="libStrategy" id="libStratRNA" value="RNA-Seq" checked>
+                <label class="form-check-label" for="libStratRNA">RNA-Seq</label>
             </div>
             <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="libFilter" id="filterStrict" value="strict">
-                <label class="form-check-label" for="filterStrict">Require explicit total/small/miRNA</label>
+                <input class="form-check-input" type="checkbox" name="libStrategy" id="libStratNcRNA" value="ncRNA-Seq" checked>
+                <label class="form-check-label" for="libStratNcRNA">ncRNA-Seq</label>
             </div>
             <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="libFilter" id="filterNone" value="allow-no-info">
-                <label class="form-check-label" for="filterNone">No library filter</label>
+                <input class="form-check-input" type="checkbox" name="libStrategy" id="libStratMirna" value="miRNA-Seq">
+                <label class="form-check-label" for="libStratMirna">miRNA-Seq</label>
             </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" name="libStrategy" id="libStratTotal" value="Total RNA-Seq">
+                <label class="form-check-label" for="libStratTotal">Total RNA-Seq</label>
+            </div>
+            <div class="form-text">Which SRA library strategies to include. Runs with other strategies are excluded.</div>
+        </div>
+        <div class="mb-3">
+            <p class="form-label fw-bold mb-2"><strong>Library selection (accepted prep methods)</strong></p>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" name="libSelection" id="libSelCdna" value="cDNA" checked>
+                <label class="form-check-label" for="libSelCdna">cDNA</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" name="libSelection" id="libSelPolyA" value="PolyA">
+                <label class="form-check-label" for="libSelPolyA">PolyA</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" name="libSelection" id="libSelSize" value="size fractionation" checked>
+                <label class="form-check-label" for="libSelSize">Size fractionation</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" name="libSelection" id="libSelOther" value="other">
+                <label class="form-check-label" for="libSelOther">Other</label>
+            </div>
+            <div class="form-text">Which library selection methods to include. Runs with NaN or unlisted values are kept.</div>
         </div>
         <div class="mb-3">
             <label class="form-label" for="condition"><strong>Condition of interest</strong></label>
@@ -54,7 +79,7 @@
             <div class="form-text">The app generates search terms and detection patterns from this automatically.</div>
         </div>
         <div class="mb-3">
-            <label class="form-label" for="minTotal"><strong>Min total samples per study</strong></label>
+            <label class="form-label" for="minTotal"><strong>Min distinct samples per study</strong></label>
             <input type="number" class="form-control" id="minTotal" value="30" min="0">
         </div>
         <div class="mb-3">
