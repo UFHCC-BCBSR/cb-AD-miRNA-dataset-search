@@ -257,7 +257,7 @@ PUBMED_QUERY = (
     '(RNA-seq[Title/Abstract] OR "RNA sequencing"[Title/Abstract] '
     'OR transcriptom*[Title/Abstract])'
 )
-HUMAN_FILTER = 'AND humans[MeSH Terms]'
+HUMAN_FILTER = 'NOT (mouse[Title/Abstract] OR mice[Title/Abstract] OR rat[Title/Abstract] OR rats[Title/Abstract] OR macaque[Title/Abstract] OR murine[Title/Abstract] OR muridae[Title/Abstract] OR rodent[Title/Abstract] OR porcine[Title/Abstract] OR canine[Title/Abstract] OR marmoset[Title/Abstract])'
 RETMAX = 5000
 
 # ---------------------------------------------------------------------
@@ -315,10 +315,24 @@ def chunked(lst, size):
 
 
 def esearch_pubmed(query, retmax):
-    result = ncbi_get(f"{EUTILS}/esearch.fcgi", {
-        "db": "pubmed", "term": query, "retmax": retmax, "retmode": "json",
-    })
-    return result.get("esearchresult", {}).get("idlist", [])
+    all_ids = []
+    retstart = 0
+    while True:
+        result = ncbi_get(f"{EUTILS}/esearch.fcgi", {
+            "db": "pubmed", "term": query, "retmax": retmax,
+            "retstart": retstart, "retmode": "json",
+        })
+        esr = result.get("esearchresult", {})
+        count = int(esr.get("count", 0))
+        batch_ids = esr.get("idlist", [])
+        all_ids.extend(batch_ids)
+        if retstart == 0:
+            print(f"  esearch count={count}, fetching up to {retmax}")
+        if len(all_ids) >= count or not batch_ids:
+            break
+        retstart += len(batch_ids)
+    print(f"  esearch fetched={len(all_ids)}/{count}")
+    return all_ids
 
 
 def efetch_abstracts(pmids):
@@ -373,30 +387,57 @@ def esummary_pubmed(pmids):
     return out
 
 
+def _extract_pmid_from_linkset(linkset):
+    """Extract source PMID string from an elink linkset response.
+
+    NCBI elink returns ids as either:
+      - flat strings: ["15703411"]
+      - dicts: [{"idtype": "pubmed", "value": "15703411"}]
+    """
+    ids = linkset.get("ids", [])
+    if not ids:
+        return None
+    first = ids[0]
+    if isinstance(first, dict):
+        return str(first.get("value", ""))
+    return str(first)
+
+
 def resolve_to_geo(pmids):
-    """Batched PMID -> linked GEO accession lookup (elink + esummary)."""
-    gds_uids = []
+    """Per-PMID elink -> GEO accession lookup.
+
+    Uses individual elink calls (not batched) because NCBI's batch elink
+    response merges ALL GDS UIDs into a single linkset with no per-source
+    mapping, making batch results assign every UID to the first PMID.
+    """
     pmid_to_uid = {}
-    for batch in chunked(pmids, 100):
+    elink_ok = 0
+    elink_fail = 0
+    for pmid in pmids:
         try:
             elink = ncbi_post(f"{EUTILS}/elink.fcgi", {
-                "dbfrom": "pubmed", "db": "gds", "id": ",".join(batch),
+                "dbfrom": "pubmed", "db": "gds", "id": pmid,
                 "retmode": "json",
             })
         except RuntimeError as e:
-            print(f"    elink failed for batch: {e}")
-            time.sleep(0.4)
+            print(f"    [WARN] elink failed for PMID {pmid}: {e}")
+            elink_fail += 1
             continue
         for linkset in elink.get("linksets", []):
-            src_pmid = linkset.get("ids", [None])[0]
+            src = _extract_pmid_from_linkset(linkset)
+            if src != pmid:
+                continue
             for db_block in linkset.get("linksetdbs", []):
                 for uid in db_block.get("links", []):
-                    gds_uids.append(uid)
-                    pmid_to_uid.setdefault(str(src_pmid), []).append(uid)
-        time.sleep(0.4)
+                    pmid_to_uid.setdefault(pmid, []).append(uid)
+        if pmid in pmid_to_uid:
+            elink_ok += 1
+        time.sleep(0.35)
+
+    all_uids = list(set(u for uids in pmid_to_uid.values() for u in uids))
 
     uid_to_acc = {}
-    for batch in chunked(list(set(gds_uids)), 100):
+    for batch in chunked(all_uids, 100):
         try:
             esum = ncbi_post(f"{EUTILS}/esummary.fcgi", {
                 "db": "gds", "id": ",".join(batch), "retmode": "json",
@@ -417,10 +458,15 @@ def resolve_to_geo(pmids):
         ))
         pmid_to_geo[pmid] = accs
 
+    for pmid, accs in pmid_to_geo.items():
+        if len(accs) > 5:
+            print(f"    [WARN] PMID {pmid} has {len(accs)} accessions "
+                  f"(>5 — possible contamination): {accs}")
+
     unresolved = [p for p in pmids if p not in pmid_to_geo]
-    print(f"  Resolved {len(pmid_to_geo)}/{len(pmids)} papers via elink "
-          f"cross-reference ({len(unresolved)} unresolved)")
-    return pmid_to_geo
+    print(f"  elink: {elink_ok}/{len(pmids)} resolved, "
+          f"{elink_fail} failed, {len(unresolved)} no GEO links")
+    return pmid_to_geo, elink_ok
 
 
 def fallback_title_search_geo(pmid, title):
@@ -443,7 +489,7 @@ def fallback_title_search_geo(pmid, title):
         return []
     try:
         esum = ncbi_get(f"{EUTILS}/esummary.fcgi", {
-            "db": "gds", "id": uids, "retmode": "json",
+            "db": "gds", "id": ",".join(uids), "retmode": "json",
         })
     except RuntimeError as e:
         print(f"    [WARN] esummary failed for PMID {pmid}: {e}")
@@ -498,11 +544,10 @@ def main():
     query = PUBMED_QUERY
     if args.human_only:
         query = f"({PUBMED_QUERY}) {HUMAN_FILTER}"
-        print("  Human-only filter: ON (humans[MeSH Terms])")
+        print("  Human-only filter: ON (exclude mouse/rat/macaque/etc.)")
     else:
         print("  Human-only filter: OFF")
     pmids = esearch_pubmed(query, RETMAX)
-    print(f"  {len(pmids)} papers found")
 
     print("Fetching abstracts...")
     abstracts = efetch_abstracts(pmids)
@@ -554,8 +599,13 @@ def main():
 
     print("Resolving promising papers to GEO accessions...")
     promising_pmids = df.loc[df["promising"], "pmid"].tolist()
-    pmid_to_geo = resolve_to_geo(promising_pmids) if promising_pmids else {}
+    if promising_pmids:
+        pmid_to_geo, elink_ok = resolve_to_geo(promising_pmids)
+    else:
+        pmid_to_geo, elink_ok = {}, 0
 
+    fallback_ok = 0
+    fallback_fail = 0
     still_unresolved = [p for p in promising_pmids if not pmid_to_geo.get(p)]
     if still_unresolved:
         print(f"  Trying title-search fallback for "
@@ -616,6 +666,19 @@ def main():
             "likely_single_cell", "staging_design_signal",
             "geo_accessions", "geo_resolution_reason"]
     print(df.loc[df["promising"], cols].to_string(index=False))
+
+    print()
+    print("=== REGRESSION METRICS ===")
+    if n_promising:
+        print(f"PubMed: papers_found={n_total} | promising={n_promising} "
+              f"| elink_resolved={elink_ok} "
+              f"| fallback_resolved={fallback_ok} "
+              f"| total_resolved={n_resolved}/{n_promising} "
+              f"({n_resolved/n_promising*100:.0f}%)")
+    else:
+        print("PubMed: no promising papers")
+    print("SRA: (see ad_pfc_dataset_search.py output)")
+    print("==========================")
 
 
 if __name__ == "__main__":

@@ -32,7 +32,10 @@ Output:
 """
 
 import re
+import time
+import xml.etree.ElementTree as ET
 import pandas as pd
+import requests
 from pysradb import SRAweb
 
 # ---------------------------------------------------------------------
@@ -93,6 +96,40 @@ def matched_terms(text, patterns):
     return [p for p in patterns if re.search(p, text, re.IGNORECASE)]
 
 
+def fetch_biosample_tissue(biosample_ids, batch_size=200):
+    """Fetch source_name from BioSample for a list of biosample accessions.
+
+    Returns {biosample_accession: source_name_string}.
+    """
+    import xml.etree.ElementTree as ET
+    out = {}
+    ids_list = list(set(biosample_ids))
+    for i in range(0, len(ids_list), batch_size):
+        batch = ids_list[i:i + batch_size]
+        try:
+            r = requests.post(
+                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+                data={"db": "biosample", "id": ",".join(batch),
+                      "retmode": "xml"},
+                timeout=30,
+                headers={"User-Agent": "ad-rna-seq-search/1.0"},
+            )
+            if r.status_code != 200:
+                continue
+            root = ET.fromstring(r.content)
+            for sample in root.findall(".//BioSample"):
+                acc = sample.get("accession", "")
+                for attr in sample.findall(".//Attribute"):
+                    name = attr.get("attribute_name",
+                                    attr.get("harmonized_name", ""))
+                    if name == "source_name" and attr.text:
+                        out[acc] = attr.text.strip()
+        except Exception as e:
+            print(f"  [WARN] BioSample fetch failed for batch: {e}")
+        time.sleep(0.4)
+    return out
+
+
 def main():
     global TISSUE_SYNONYMS, CASE_CONTROL_PATTERNS
     import argparse
@@ -142,9 +179,26 @@ def main():
     print(f"After human + RNA-seq filter: {len(raw)}")
 
     # -------------------------------------------------------------
+    # 3b. Fetch tissue info from BioSample (source_name attribute)
+    # -------------------------------------------------------------
+    if len(raw) and "biosample" in raw.columns:
+        bs_ids = raw["biosample"].dropna().unique().tolist()
+        print(f"  Fetching tissue info from {len(bs_ids)} BioSample records...")
+        tissue_map = fetch_biosample_tissue(bs_ids)
+        raw["biosource"] = raw["biosample"].map(
+            lambda b: tissue_map.get(b, "") if pd.notna(b) else "")
+        n_with_tissue = (raw["biosource"] != "").sum()
+        print(f"  Got tissue info for {n_with_tissue}/{len(raw)} runs")
+        if n_with_tissue:
+            print(f"  Sample tissues: {raw['biosource'].value_counts().head(10).to_dict()}")
+    else:
+        raw["biosource"] = ""
+
+    # -------------------------------------------------------------
     # 4. Concept matching across every available text field
     # -------------------------------------------------------------
-    text_cols = [c for c in ["study_title", "experiment_title", "experiment_desc", "sample_title", "sample_attribute"]
+    text_cols = [c for c in ["biosource", "study_title", "experiment_title",
+                             "experiment_desc", "sample_title"]
                   if c in raw.columns]
 
     def row_text(row):
@@ -162,6 +216,19 @@ def main():
 
     candidates = raw[raw["tissue_match"]] if len(raw) else raw
     print(f"After tissue-concept match (any synonym, any field): {len(candidates)}")
+
+    if len(raw) and "tissue_match" in raw.columns:
+        print("  Per-synonym match counts:")
+        for pat in TISSUE_SYNONYMS:
+            count = raw["_all_text"].apply(
+                lambda t: bool(re.search(pat, str(t), re.IGNORECASE))
+            ).sum()
+            if count > 0:
+                print(f"    {pat!r:<35} -> {count} runs")
+        print("  Sample _all_text for 5 runs (first 150 chars):")
+        for _, row in raw.head(5).iterrows():
+            txt = str(row.get("_all_text", ""))[:150]
+            print(f"    {row.get('run_accession','?')}: {txt}")
 
     # -------------------------------------------------------------
     # 5. Roll up to STUDY level for a reviewable summary
@@ -198,6 +265,17 @@ def main():
         cols = ["study_accession", "study_title", "n_samples",
                 "disease_exclude_flag", "likely_single_cell", "likely_specialized_assay"]
         print(summary[cols].to_string(index=False))
+
+    print()
+    n_deduped = len(raw) if len(raw) else 0
+    n_human_rnaseq = n_deduped
+    n_tissue = len(candidates)
+    n_final = len(summary)
+    print("=== REGRESSION METRICS ===")
+    print(f"SRA: runs_deduped={n_deduped} | after_human_rnaseq={n_human_rnaseq} "
+          f"| after_tissue={n_tissue} | final_datasets={n_final}")
+    print("PubMed: (see literature_first_search.py output)")
+    print("==========================")
 
 
 if __name__ == "__main__":

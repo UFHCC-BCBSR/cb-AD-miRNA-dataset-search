@@ -78,7 +78,7 @@ def fetch_geo_by_title(title):
     params = {"db": "gds", "term": query, "retmax": 5, "retmode": "json"}
     r = ncbi_get(f"{EUTILS}/esearch.fcgi", params)
     try:
-        ids = r.json().get('esearchresult', {}).get('idlist', [])
+        ids = r.get('esearchresult', {}).get('idlist', [])
     except Exception:
         ids = []
     if not ids:
@@ -268,10 +268,12 @@ def main():
     # Write CSV
     out_df = pd.DataFrame(out_rows)
     out_df.to_csv('verified_candidates_full.csv', index=False)
-    # Summary print
-    counts = out_df['confidence'].value_counts().to_dict()
-    print('Summary:')
-    print(json.dumps(counts, indent=2))
+    if out_df.empty:
+        print('No candidates to summarize.')
+    else:
+        counts = out_df['confidence'].value_counts().to_dict()
+        print('Summary:')
+        print(json.dumps(counts, indent=2))
 
 if __name__ == '__main__':
     main()
