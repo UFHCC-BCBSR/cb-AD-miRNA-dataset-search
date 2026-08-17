@@ -718,7 +718,6 @@ def main():
               f"({n_resolved/n_promising*100:.0f}%)")
     else:
         print("PubMed: no promising papers")
-    print("SRA: (see ad_pfc_dataset_search.py output)")
     print("==========================")
 
 
