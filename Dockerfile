@@ -23,4 +23,4 @@ COPY --chown=appuser . .
 EXPOSE 3838
 
 # Default command – run the app with Gunicorn (production‑grade WSGI server)
-CMD ["gunicorn", "-b", "0.0.0.0:3838", "app:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:3838", "-k", "gthread", "--threads", "4", "app:app"]
