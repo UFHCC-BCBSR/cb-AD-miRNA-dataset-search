@@ -19,6 +19,7 @@ import re, json, time, sys
 import pandas as pd
 import requests
 import xml.etree.ElementTree as ET
+from literature_first_search import ncbi_get, ncbi_get_xml
 
 EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 TIMEOUT = 20
@@ -75,7 +76,7 @@ def fetch_geo_by_title(title):
     cleaned_title = title.rstrip('.').replace('"', '')
     query = f'"{cleaned_title}"[Title]'
     params = {"db": "gds", "term": query, "retmax": 5, "retmode": "json"}
-    r = requests.get(f"{EUTILS}/esearch.fcgi", params=params, timeout=TIMEOUT)
+    r = ncbi_get(f"{EUTILS}/esearch.fcgi", params)
     try:
         ids = r.json().get('esearchresult', {}).get('idlist', [])
     except Exception:
@@ -83,10 +84,15 @@ def fetch_geo_by_title(title):
     if not ids:
         return []
     # Resolve to accessions
-    esum = requests.get(f"{EUTILS}/esummary.fcgi", params={"db": "gds", "id": ",".join(ids), "retmode": "json"}, timeout=TIMEOUT)
+    try:
+        esum_result = ncbi_get(f"{EUTILS}/esummary.fcgi",
+                               {"db": "gds", "id": ",".join(ids),
+                                "retmode": "json"})
+    except RuntimeError:
+        return []
     accs = []
     try:
-        result = esum.json().get('result', {})
+        result = esum_result.get('result', {})
         for uid in result.get('uids', []):
             acc = result.get(uid, {}).get('accession')
             if acc:
@@ -98,10 +104,7 @@ def fetch_geo_by_title(title):
 def fetch_geo_xml(gse):
     url = f"{EUTILS}/efetch.fcgi"
     params = {"db": "gds", "id": gse, "rettype": "full", "retmode": "xml"}
-    r = requests.get(url, params=params, timeout=TIMEOUT)
-    if r.status_code != 200:
-        return None
-    return r.content
+    return ncbi_get_xml(url, params)
 
 def parse_geo_xml(content):
     # Return dict with needed fields

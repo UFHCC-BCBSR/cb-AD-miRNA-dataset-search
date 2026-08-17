@@ -7,7 +7,7 @@ Features:
 * When finished, a download link for verified_candidates_full.csv appears.
 ''' 
 
-import os, uuid, shutil, threading, queue, subprocess
+import os, uuid, shutil, threading, queue, subprocess, shlex
 from flask import Flask, request, jsonify, send_from_directory, Response, render_template
 
 app = Flask(__name__)
@@ -62,7 +62,7 @@ def start_pipeline(run_id, params):
                     q.put(line.rstrip())
                 proc.wait()
                 if proc.returncode != 0:
-                    q.put(f"[ERROR] Command {' '.join(cmd)} exited with code {proc.returncode}")
+                    q.put(f"[ERROR] Command {shlex.join(cmd)} exited with code {proc.returncode}")
                     break
             q.put('__DONE__')
         except Exception as e:
