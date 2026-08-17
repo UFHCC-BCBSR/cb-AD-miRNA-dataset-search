@@ -6,8 +6,12 @@ const maxParallel = document.getElementById('maxParallel');
 const parallelVal = document.getElementById('parallelVal');
 const submitBtn = form.querySelector('button[type="submit"]');
 
-const cfg = JSON.parse(document.getElementById('appConfig').textContent);
-const base = cfg.appPrefix || '';
+const cfgEl = document.getElementById('appConfig');
+let cfgBase = '';
+try { cfgBase = (JSON.parse(cfgEl.textContent).scriptRoot || ''); } catch (e) {}
+const BASE = cfgBase
+    ? new URL(cfgBase.replace(/\/?$/, '/'), window.location.origin).href
+    : new URL('.', window.location.href).href;
 
 maxParallel.addEventListener('input', () => {
     parallelVal.textContent = maxParallel.value;
@@ -15,7 +19,7 @@ maxParallel.addEventListener('input', () => {
 
 form.addEventListener('submit', e => {
     e.preventDefault();
-    logEl.textContent = '';
+    logEl.textContent = `BASE URL: ${BASE}\n`;
     downloadDiv.classList.add('hidden');
     submitBtn.disabled = true;
     submitBtn.textContent = 'Running…';
@@ -32,7 +36,7 @@ form.addEventListener('submit', e => {
         maxParallel: maxParallel.value
     };
 
-    fetch(`${base}/run`, {
+    fetch(BASE + 'run', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(data)
@@ -40,18 +44,18 @@ form.addEventListener('submit', e => {
     .then(r => {
         if (!r.ok) {
             return r.text().then(body => {
-                throw new Error(`POST /run failed (${r.status}): ${body.slice(0, 500)}`);
+                throw new Error(`POST run failed (${r.status}): ${body.slice(0, 500)}`);
             });
         }
         return r.json();
     })
     .then(res => {
-        const eventSource = new EventSource(`${base}/stream/${res.run_id}`);
+        const eventSource = new EventSource(BASE + 'stream/' + res.run_id);
 
         eventSource.onmessage = ev => {
             if (ev.data === '__DONE__') {
                 eventSource.close();
-                downloadLink.href = `${base}/download/${res.run_id}`;
+                downloadLink.href = BASE + 'download/' + res.run_id;
                 downloadDiv.classList.remove('hidden');
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Run Search';
