@@ -24,10 +24,10 @@
             <p>Finds public RNA-seq datasets for case-control comparisons &mdash; e.g. Alzheimer's
             vs. controls in prefrontal cortex. Returns a shortlist of candidate studies to
             review by hand. Does not download or analyze data.</p>
-            <p><strong>SRA-first</strong> &mdash; Broad disease queries against SRA, then filters each run by
+            <p><strong>SRA search</strong> &mdash; Broad disease queries against SRA, then filters each run by
             organism, library strategy, selection, and tissue. Tissue comes from BioSample
             source_name, since SRA titles rarely mention it.</p>
-            <p><strong>Literature-first</strong> &mdash; PubMed search for the condition, then resolves papers to
+            <p><strong>Literature to GEO</strong> &mdash; PubMed search for the condition, then resolves papers to
             GEO accessions via elink or title match, and reads library prep and sample
             counts from the GEO record.</p>
         </div>
@@ -45,11 +45,11 @@
                     <label class="form-label fw-bold mb-1">Data sources</label>
                     <div class="form-check form-check-inline">
                         <input class="form-check-input" type="checkbox" id="srcLit" name="srcLit" checked>
-                        <label class="form-check-label" for="srcLit">Literature&#8209;first</label>
+                        <label class="form-check-label" for="srcLit">Literature to GEO</label>
                     </div>
                     <div class="form-check form-check-inline">
                         <input class="form-check-input" type="checkbox" id="srcSra" name="srcSra" checked>
-                        <label class="form-check-label" for="srcSra">SRA&#8209;first</label>
+                        <label class="form-check-label" for="srcSra">SRA search</label>
                     </div>
                 </div>
 
@@ -129,9 +129,12 @@
 
                 <div class="mb-3">
                     <label class="form-label fw-bold mb-1" for="tissueInput">Tissue</label>
-                    <div class="form-text mb-1">Expanded automatically to related anatomical terms.</div>
-                    <input type="text" class="form-control" id="tissueInput"
-                           placeholder="prefrontal cortex" value="prefrontal cortex">
+                    <div class="form-text mb-1">Resolve to ontology terms to expand the search.</div>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="tissueInput"
+                               placeholder="prefrontal cortex" value="prefrontal cortex">
+                        <button type="button" class="btn btn-outline-secondary" id="tissuePreviewBtn">Preview terms</button>
+                    </div>
                     <div id="tissueChips" class="mt-2"></div>
                     <div id="tissueAdd" class="mt-1" style="display:none">
                         <input type="text" class="form-control form-control-sm d-inline-block" id="tissueAddInput" placeholder="add term">

@@ -31,7 +31,7 @@ def start_pipeline(run_id, params):
     commands = []
     sources = []
     if params.get('srcLit'):
-        sources.append('literature')
+        sources.append('Literature to GEO')
         lit_cmd = [
             'python', 'literature_first_search.py',
             f"--condition={params['condition']}",
@@ -43,7 +43,7 @@ def start_pipeline(run_id, params):
             lit_cmd.append('--no-human-filter')
         commands.append(lit_cmd)
     if params.get('srcSra'):
-        sources.append('SRA')
+        sources.append('SRA search')
         sra_cmd = [
             'python', 'ad_pfc_dataset_search.py',
             f"--condition={params['condition']}",
@@ -58,7 +58,7 @@ def start_pipeline(run_id, params):
             sra_cmd.append(f"--lib-selection={sel}")
         commands.append(sra_cmd)
     if params.get('srcLit'):
-        sources.append('GEO verification')
+        sources.append('Literature to GEO')
         commands.append([
             'python', 'fetch_geo_metadata.py',
             f"--min-total={params['minTotal']}",

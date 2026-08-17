@@ -87,10 +87,8 @@ function resolveTissue(query) {
     });
 }
 
-tissueInput.addEventListener('blur', () => resolveTissue(tissueInput.value));
-tissueInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); resolveTissue(tissueInput.value); }
-});
+const tissuePreviewBtn = document.getElementById('tissuePreviewBtn');
+tissuePreviewBtn.addEventListener('click', () => resolveTissue(tissueInput.value));
 
 tissueAddBtn.addEventListener('click', addCustomTerm);
 tissueAddInput.addEventListener('keydown', e => {
@@ -288,6 +286,3 @@ form.addEventListener('submit', e => {
         submitBtn.textContent = 'Run Search';
     });
 });
-
-/* ---- Initial resolution on page load ---- */
-resolveTissue(tissueInput.value);
