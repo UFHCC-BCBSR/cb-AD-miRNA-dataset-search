@@ -30,12 +30,17 @@ def start_pipeline(run_id, params):
             shutil.copy2(src, dst)
     commands = []
     if params.get('srcLit'):
-        commands.append([
+        lit_cmd = [
             'python', 'literature_first_search.py',
             f"--tissue-synonyms={params['tissueSyn']}",
             f"--case-control-regex={params['caseCtrl']}",
             f"--library-filter-mode={params['libFilter']}"
-        ])
+        ]
+        if params.get('humanOnly'):
+            lit_cmd.append('--human-only')
+        else:
+            lit_cmd.append('--no-human-filter')
+        commands.append(lit_cmd)
     if params.get('srcSra'):
         commands.append([
             'python', 'ad_pfc_dataset_search.py',
@@ -88,6 +93,7 @@ def run():
         'minCases': int(data.get('minCases', 30)),
         'minControls': int(data.get('minControls', 30)),
         'maxParallel': int(data.get('maxParallel', 2)),
+        'humanOnly': bool(data.get('humanOnly', True)),
     }
     run_id = str(uuid.uuid4())
     start_pipeline(run_id, params)

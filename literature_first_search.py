@@ -257,6 +257,7 @@ PUBMED_QUERY = (
     '(RNA-seq[Title/Abstract] OR "RNA sequencing"[Title/Abstract] '
     'OR transcriptom*[Title/Abstract])'
 )
+HUMAN_FILTER = 'AND humans[MeSH Terms]'
 RETMAX = 5000
 
 # ---------------------------------------------------------------------
@@ -299,6 +300,13 @@ SAMPLE_SIZE_PATTERN = re.compile(
     r"[^.]{0,40}\b\d{1,4}\s+(?:AD|Alzheimer|control|patient|subject|donor|case)s?\b[^.]{0,40}",
     re.IGNORECASE,
 )
+
+NON_HUMAN_PATTERNS = [
+    r"\bmouse\b", r"\bmice\b", r"\brat\b", r"\brats\b",
+    r"\brhesus\b", r"\bmacaque\b", r"\bcanine\b", r"\bmouse model\b",
+    r"\bmurine\b", r"\brodents?\b", r"\btransgenic\b",
+    r"\bmarmoset\b", r"\bporcine\b", r"\bpig\b",
+]
 
 
 def chunked(lst, size):
@@ -372,7 +380,7 @@ def resolve_to_geo(pmids):
     for batch in chunked(pmids, 100):
         try:
             elink = ncbi_post(f"{EUTILS}/elink.fcgi", {
-                "dbfrom": "pubmed", "db": "gds", "id": batch,
+                "dbfrom": "pubmed", "db": "gds", "id": ",".join(batch),
                 "retmode": "json",
             })
         except RuntimeError as e:
@@ -391,7 +399,7 @@ def resolve_to_geo(pmids):
     for batch in chunked(list(set(gds_uids)), 100):
         try:
             esum = ncbi_post(f"{EUTILS}/esummary.fcgi", {
-                "db": "gds", "id": batch, "retmode": "json",
+                "db": "gds", "id": ",".join(batch), "retmode": "json",
             })
         except RuntimeError as e:
             print(f"    esummary (gds) failed for batch: {e}")
@@ -475,6 +483,11 @@ def main():
                         choices=['strict', 'allow-no-info', 'no-polyA'],
                         default='no-polyA',
                         help='How to treat missing library selection')
+    parser.add_argument('--human-only', action='store_true', default=True,
+                        help='Filter to human studies only (default: on)')
+    parser.add_argument('--no-human-filter', dest='human_only',
+                        action='store_false',
+                        help='Disable human-only filter')
     args = parser.parse_args()
     # Override globals if args provided
     TISSUE_SYNONYMS = [s.strip() for s in
@@ -482,7 +495,13 @@ def main():
     CASE_CONTROL_PATTERNS = [args.case_control_regex]
     # -----------------------------------------------------
     print("Searching PubMed...")
-    pmids = esearch_pubmed(PUBMED_QUERY, RETMAX)
+    query = PUBMED_QUERY
+    if args.human_only:
+        query = f"({PUBMED_QUERY}) {HUMAN_FILTER}"
+        print("  Human-only filter: ON (humans[MeSH Terms])")
+    else:
+        print("  Human-only filter: OFF")
+    pmids = esearch_pubmed(query, RETMAX)
     print(f"  {len(pmids)} papers found")
 
     print("Fetching abstracts...")
@@ -514,6 +533,16 @@ def main():
         })
 
     df = pd.DataFrame(rows)
+
+    if args.human_only and len(df):
+        df["non_human_species"] = df["title"].apply(
+            lambda t: matches_any(t, NON_HUMAN_PATTERNS))
+        n_non_human = df["non_human_species"].sum()
+        if n_non_human:
+            print(f"  Excluded {n_non_human} papers with non-human species "
+                  f"in title (mouse/rat/macaque/etc.)")
+            df = df[~df["non_human_species"]]
+        df = df.drop(columns=["non_human_species"])
 
     df["promising"] = (
         df["mentions_control"]
@@ -553,15 +582,39 @@ def main():
     df["geo_accessions"] = df["pmid"].map(
         lambda p: pmid_to_geo.get(p, []))
 
+    def resolution_reason(row):
+        if row["geo_accessions"]:
+            return "resolved"
+        if not row["promising"]:
+            return "not_promising"
+        return "no_geo_link_found"
+
+    df["geo_resolution_reason"] = df.apply(resolution_reason, axis=1)
+
     df.to_csv("candidate_papers.csv", index=False)
 
-    print(f"\nDone. {len(df)} papers total, "
-          f"{df['promising'].sum()} flagged promising.")
+    n_total = len(df)
+    n_promising = df["promising"].sum()
+    n_resolved = (df["geo_resolution_reason"] == "resolved").sum()
+    n_unresolved = (df["geo_resolution_reason"] == "no_geo_link_found").sum()
+    n_not_promising = (df["geo_resolution_reason"] == "not_promising").sum()
+
+    print(f"\nDone. {n_total} papers total, "
+          f"{n_promising} flagged promising.")
+    print(f"GEO resolution: {n_resolved}/{n_promising} promising papers "
+          f"resolved ({n_resolved/n_promising*100:.0f}%)" if n_promising
+          else "GEO resolution: no promising papers")
+    if n_unresolved:
+        print(f"  Unresolved: {n_unresolved} papers "
+              f"(no GEO link found via elink or title search)")
+    if n_not_promising:
+        print(f"  Not promising: {n_not_promising} papers "
+              f"(filtered out before GEO resolution)")
     print("Saved to candidate_papers.csv")
     print()
     cols = ["pmid", "title", "year", "mentions_control",
             "likely_single_cell", "staging_design_signal",
-            "geo_accessions"]
+            "geo_accessions", "geo_resolution_reason"]
     print(df.loc[df["promising"], cols].to_string(index=False))
 
 

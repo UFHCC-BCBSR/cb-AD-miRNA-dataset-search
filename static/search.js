@@ -58,6 +58,7 @@ form.addEventListener('submit', e => {
     const data = {
         srcLit: document.getElementById('srcLit').checked,
         srcSra: document.getElementById('srcSra').checked,
+        humanOnly: document.getElementById('humanOnly').checked,
         tissueSyn: document.getElementById('tissueSyn').value,
         libFilter: document.querySelector('input[name="libFilter"]:checked').value,
         caseCtrl: document.getElementById('caseCtrl').value,
