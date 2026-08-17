@@ -276,17 +276,28 @@ def main():
     # 5. Roll up to STUDY level for a reviewable summary
     # -------------------------------------------------------------
     if len(candidates):
+        def join_unique(x):
+            return "; ".join(sorted(set(str(v) for v in x if pd.notna(v) and str(v).strip())))
         summary = (
             candidates.groupby("study_accession")
             .agg(
                 study_title=("study_title", "first"),
+                experiment_accession=("experiment_accession", "first"),
+                experiment_title=("experiment_title", "first"),
+                organism_name=("organism_name", "first"),
+                library_selection=("library_selection", join_unique),
+                library_strategy=("library_strategy", join_unique),
+                library_source=("library_source", join_unique),
+                library_layout=("library_layout", join_unique),
                 n_runs=("run_accession", "nunique"),
                 n_samples=("sample_accession", "nunique"),
+                biosource=("biosource", join_unique),
                 tissue_terms_found=("tissue_terms_found", lambda x: sorted(set(t for lst in x for t in lst))),
+                case_control_match=("case_control_match", "any"),
                 disease_exclude_flag=("disease_exclude_flag", "any"),
                 likely_single_cell=("likely_single_cell", "any"),
                 likely_specialized_assay=("likely_specialized_assay", "any"),
-                instrument_models=("instrument_model", lambda x: sorted(set(x))),
+                instrument_models=("instrument_model", join_unique),
             )
             .reset_index()
                 .sort_values("n_samples", ascending=False)
@@ -305,7 +316,9 @@ def main():
     if len(summary):
         print()
         cols = ["study_accession", "study_title", "n_samples",
-                "disease_exclude_flag", "likely_single_cell", "likely_specialized_assay"]
+                "library_selection", "library_strategy", "biosource",
+                "case_control_match", "disease_exclude_flag",
+                "likely_single_cell", "likely_specialized_assay"]
         print(summary[cols].to_string(index=False))
 
     print()
