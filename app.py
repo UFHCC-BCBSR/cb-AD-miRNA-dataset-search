@@ -46,7 +46,8 @@ def start_pipeline(run_id, params):
             'python', 'ad_pfc_dataset_search.py',
             f"--condition={params['condition']}",
             f"--tissue-synonyms={params['tissueSyn']}",
-            f"--library-filter-mode={params['libFilter']}"
+            f"--library-filter-mode={params['libFilter']}",
+            f"--min-total={params['minTotal']}"
         ])
     if params.get('srcLit'):
         commands.append([

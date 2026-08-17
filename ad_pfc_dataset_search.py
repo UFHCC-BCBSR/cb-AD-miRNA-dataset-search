@@ -162,6 +162,8 @@ def main():
                         help='Comma‑separated list of tissue synonyms')
     parser.add_argument('--library-filter-mode', choices=['strict','allow-no-info','no-polyA'],
                         default='no-polyA', help='How to treat missing library selection')
+    parser.add_argument('--min-total', type=int, default=30,
+                        help='Minimum total samples per study')
     args = parser.parse_args()
     TISSUE_SYNONYMS = [s.strip() for s in args.tissue_synonyms.split(',') if s.strip()]
     case_patterns = condition_to_case_patterns(args.condition)
@@ -276,7 +278,7 @@ def main():
                 .sort_values("n_samples", ascending=False)
               )
         # Keep only studies with at least 30 total samples (approximate target)
-        summary = summary[summary["n_samples"] >= 30]
+        summary = summary[summary["n_samples"] >= args.min_total]
     else:
         summary = pd.DataFrame()
 
