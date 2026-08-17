@@ -50,6 +50,8 @@ def start_pipeline(run_id, params):
             f"--tissue-synonyms={params['tissueSyn']}",
             f"--min-total={params['minTotal']}"
         ]
+        if params.get('includeNoMetadata'):
+            sra_cmd.append('--include-no-metadata')
         for strat in params.get('libStrategy', []):
             sra_cmd.append(f"--lib-strategy={strat}")
         for sel in params.get('libSelection', []):
@@ -60,6 +62,7 @@ def start_pipeline(run_id, params):
         commands.append([
             'python', 'fetch_geo_metadata.py',
             f"--min-total={params['minTotal']}",
+            f"--tissue-synonyms={params['tissueSyn']}",
             f"--max-parallel={params['maxParallel']}"
         ])
     q.put(f"[INFO] Sources: {' + '.join(sources) if sources else 'none'}")
@@ -90,6 +93,15 @@ def start_pipeline(run_id, params):
 def index():
     return render_template('index.html')
 
+@app.route('/resolve_tissue')
+def resolve_tissue():
+    from tissue_ontology import resolve_tissue as _resolve
+    q = request.args.get('q', '')
+    result = _resolve(q)
+    if result is None:
+        return jsonify({'error': 'OLS unreachable', 'fallback': [q.strip().lower()]})
+    return jsonify(result)
+
 @app.route('/preview_patterns')
 def preview_patterns():
     condition = request.args.get('condition', '')
@@ -112,16 +124,18 @@ def preview_patterns():
 @app.route('/run', methods=['POST'])
 def run():
     data = request.get_json()
+    tissue_terms = data.get('tissueTerms', [])
     params = {
         'srcLit': bool(data.get('srcLit', True)),
         'srcSra': bool(data.get('srcSra', True)),
-        'tissueSyn': data.get('tissueSyn', ''),
+        'tissueSyn': ','.join(tissue_terms) if tissue_terms else '',
         'libStrategy': data.get('libStrategy', []),
         'libSelection': data.get('libSelection', []),
         'condition': data.get('condition', ''),
         'minTotal': int(data.get('minTotal', 30)),
         'maxParallel': int(data.get('maxParallel', 2)),
         'humanOnly': bool(data.get('humanOnly', True)),
+        'includeNoMetadata': bool(data.get('includeNoMetadata', True)),
     }
     run_id = str(uuid.uuid4())
     start_pipeline(run_id, params)

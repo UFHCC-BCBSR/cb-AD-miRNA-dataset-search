@@ -37,19 +37,15 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 import requests
 from pysradb import SRAweb
+from tissue_ontology import normalize_for_match, matches_tissue
 
 # ---------------------------------------------------------------------
 # 1. Synonym sets (the "ontology" -- expand these anytime a reviewer
 #    spots a real study using wording not covered here)
 # ---------------------------------------------------------------------
 
-TISSUE_SYNONYMS = [
-    r"prefrontal cortex", r"dorsolateral prefrontal", r"\bdlpfc\b",
-    r"\bba ?9\b", r"\bba ?10\b", r"\bba ?46\b",
-    r"frontal cortex", r"frontal lobe", r"frontal gyrus",
-    r"middle frontal gyrus", r"superior frontal gyrus",
-    r"brodmann area 9", r"brodmann area 10", r"\bpfc\b",
-]
+# TISSUE_SYNONYMS is now passed exclusively via --tissue-synonyms.
+# Default is empty; terms come from the web UI's UBERON resolution.
 
 # Conditions that overlap in free text with Alzheimer's but are NOT it --
 # flagged rather than silently excluded, so a human makes the final call.
@@ -155,21 +151,22 @@ def fetch_biosample_tissue(biosample_ids, batch_size=200):
 
 
 def main():
-    global TISSUE_SYNONYMS
     import argparse
     parser = argparse.ArgumentParser(description='SRA case-control search with tissue & library filters')
     parser.add_argument('--condition', required=True,
                         help='Disease/condition of interest (e.g., "Alzheimer\'s disease")')
-    parser.add_argument('--tissue-synonyms', default=','.join(TISSUE_SYNONYMS),
-                        help='Comma‑separated list of tissue synonyms')
+    parser.add_argument('--tissue-synonyms', default='',
+                        help='Comma‑separated list of tissue terms (from UBERON resolution)')
     parser.add_argument('--lib-strategy', action='append', default=[],
                         help='SRA library strategies to include (repeatable, e.g., --lib-strategy=RNA-Seq --lib-strategy=ncRNA-Seq)')
     parser.add_argument('--lib-selection', action='append', default=[],
                         help='Library selection methods to include (repeatable, e.g., --lib-selection=cDNA --lib-selection="size fractionation")')
     parser.add_argument('--min-total', type=int, default=30,
                         help='Minimum total samples per study')
+    parser.add_argument('--include-no-metadata', action='store_true', default=False,
+                        help='Include runs with no tissue metadata in the output (recall-first)')
     args = parser.parse_args()
-    TISSUE_SYNONYMS = [s.strip() for s in args.tissue_synonyms.split(',') if s.strip()]
+    tissue_terms = [s.strip() for s in args.tissue_synonyms.split(',') if s.strip()]
     case_patterns = condition_to_case_patterns(args.condition)
     broad_queries = condition_to_sra_queries(args.condition)
 
@@ -248,8 +245,22 @@ def main():
     if len(raw):
         raw = raw.copy()
         raw["_all_text"] = raw.apply(row_text, axis=1)
-        raw["tissue_match"] = raw["_all_text"].apply(lambda t: matches_any(t, TISSUE_SYNONYMS))
-        raw["tissue_terms_found"] = raw["_all_text"].apply(lambda t: matched_terms(t, TISSUE_SYNONYMS))
+        def apply_tissue_match(text):
+            if not tissue_terms:
+                return True, [], "no terms"
+            if not isinstance(text, str) or not text.strip():
+                if args.include_no_metadata:
+                    return False, [], "no metadata"
+                return False, [], "no match"
+            matched, unmatched = matches_tissue(text, tissue_terms)
+            if matched:
+                return True, matched, "matched"
+            if not unmatched:
+                return False, [], "no metadata"
+            return False, [], "no match"
+        raw["tissue_evidence"] = raw["_all_text"].apply(lambda t: apply_tissue_match(t)[2])
+        raw["tissue_match"] = raw["_all_text"].apply(lambda t: apply_tissue_match(t)[0])
+        raw["tissue_terms_found"] = raw["_all_text"].apply(lambda t: apply_tissue_match(t)[1])
         raw["disease_exclude_flag"] = raw["_all_text"].apply(lambda t: matches_any(t, DISEASE_EXCLUDE_SYNONYMS))
         raw["likely_single_cell"] = raw["_all_text"].apply(lambda t: matches_any(t, SINGLE_CELL_SYNONYMS))
         raw["likely_specialized_assay"] = raw["_all_text"].apply(lambda t: matches_any(t, SPECIALIZED_ASSAY_SYNONYMS))
@@ -259,13 +270,20 @@ def main():
     print(f"After tissue-concept match (any synonym, any field): {len(candidates)}")
 
     if len(raw) and "tissue_match" in raw.columns:
-        print("  Per-synonym match counts:")
-        for pat in TISSUE_SYNONYMS:
-            count = raw["_all_text"].apply(
-                lambda t: bool(re.search(pat, str(t), re.IGNORECASE))
-            ).sum()
-            if count > 0:
-                print(f"    {pat!r:<35} -> {count} runs")
+        evidence_counts = raw["tissue_evidence"].value_counts().to_dict()
+        n_no_metadata = evidence_counts.get("no metadata", 0)
+        n_matched = evidence_counts.get("matched", 0)
+        n_no_match = evidence_counts.get("no match", 0)
+        n_no_terms = evidence_counts.get("no terms", 0)
+        print(f"  Tissue evidence breakdown: {n_matched} matched, {n_no_match} no match, {n_no_metadata} no metadata, {n_no_terms} no terms")
+        if tissue_terms:
+            print("  Per-term hit counts:")
+            for term in tissue_terms:
+                count = raw["_all_text"].apply(
+                    lambda t: bool(re.search(re.escape(term), normalize_for_match(t), re.IGNORECASE))
+                ).sum()
+                if count > 0:
+                    print(f"    {term!r:<35} -> {count} runs")
         print("  Sample _all_text for 5 runs (first 150 chars):")
         for _, row in raw.head(5).iterrows():
             txt = str(row.get("_all_text", ""))[:150]
@@ -324,12 +342,14 @@ def main():
     n_after_human_rnaseq = len(raw) if len(raw) else 0
     n_tissue = len(candidates)
     n_final = len(summary)
-    n_blank_tissue = (len(raw) - (raw["biosource"] != "").sum()) if len(raw) else 0
-    n_tissue_from_bio = (raw["biosource"] != "").sum() if len(raw) else 0
+    evidence_counts = raw["tissue_evidence"].value_counts().to_dict() if len(raw) and "tissue_evidence" in raw.columns else {}
+    n_no_metadata = evidence_counts.get("no metadata", 0)
+    n_matched = evidence_counts.get("matched", 0)
+    n_no_match = evidence_counts.get("no match", 0)
     print("=== REGRESSION METRICS ===")
     print(f"SRA: runs_deduped={n_raw} | after_human_rnaseq={n_after_human_rnaseq} "
           f"| after_tissue={n_tissue} | final_datasets={n_final}")
-    print(f"  tissue_blank_fields={n_blank_tissue} | tissue_from_metadata={n_tissue_from_bio}")
+    print(f"  tissue_no_metadata={n_no_metadata} | tissue_matched={n_matched} | tissue_no_match={n_no_match}")
     print("==========================")
 
 

@@ -20,17 +20,19 @@ from literature_first_search import (
     SINGLE_CELL_PATTERNS,
     STAGING_ONLY_PATTERNS,
     NON_HUMAN_PATTERNS,
-    PUBMED_TISSUE_TERMS,
 )
 from ad_pfc_dataset_search import (
     condition_variants as sra_condition_variants,
     condition_to_sra_queries,
     condition_to_case_patterns as sra_condition_to_case_patterns,
     matches_any as sra_matches_any,
-    TISSUE_SYNONYMS,
     SINGLE_CELL_SYNONYMS,
     SPECIALIZED_ASSAY_SYNONYMS,
     DISEASE_EXCLUDE_SYNONYMS,
+)
+from tissue_ontology import (
+    normalize_for_match,
+    matches_tissue,
 )
 
 
@@ -87,7 +89,7 @@ class TestConditionToPubmedQuery:
 
     def test_alzheimer_generates_variants(self):
         q = condition_to_pubmed_query(
-            "Alzheimer's disease", PUBMED_TISSUE_TERMS
+            "Alzheimer's disease", ["prefrontal cortex", "DLPFC"]
         )
         assert "Alzheimer's disease" in q
         assert "Alzheimers disease" in q
@@ -215,10 +217,6 @@ class TestPatternLists:
         assert len(NON_HUMAN_PATTERNS) > 0
         assert matches_any("mouse model", NON_HUMAN_PATTERNS)
 
-    def test_sra_tissue_synonyms(self):
-        assert len(TISSUE_SYNONYMS) > 0
-        assert matches_any("prefrontal cortex", TISSUE_SYNONYMS)
-
     def test_sra_single_cell(self):
         assert len(SINGLE_CELL_SYNONYMS) > 0
         assert matches_any("single-nucleus RNA-seq", SINGLE_CELL_SYNONYMS)
@@ -250,3 +248,89 @@ class TestSampleSizeSnippets:
 
     def test_none(self):
         assert find_sample_size_snippets(None) == []
+
+
+# -------------------------------------------------------------------
+# tissue_ontology: normalize_for_match
+# -------------------------------------------------------------------
+class TestNormalizeForMatch:
+    def test_lowercases(self):
+        assert normalize_for_match("Prefrontal Cortex") == "prefrontal cortex"
+
+    def test_strips_curly_quotes(self):
+        assert "\u2018" not in normalize_for_match("Alzheimer\u2019s disease")
+        assert "\u2019" not in normalize_for_match("Alzheimer\u2019s disease")
+
+    def test_strips_punctuation(self):
+        result = normalize_for_match("prefrontal cortex (BA9)")
+        assert "(" not in result
+        assert ")" not in result
+        assert "ba9" in result
+
+    def test_collapses_whitespace(self):
+        result = normalize_for_match("prefrontal   cortex")
+        assert "  " not in result
+
+    def test_normalizes_dashes(self):
+        result = normalize_for_match("frontal\u2012cortex")
+        assert "\u2012" not in result
+        assert "frontal" in result
+        assert "cortex" in result
+
+    def test_non_string_returns_empty(self):
+        assert normalize_for_match(None) == ""
+        assert normalize_for_match(123) == ""
+
+    def test_empty_string(self):
+        assert normalize_for_match("") == ""
+
+
+# -------------------------------------------------------------------
+# tissue_ontology: matches_tissue
+# -------------------------------------------------------------------
+class TestMatchesTissue:
+    def test_long_term_substring(self):
+        matched, unmatched = matches_tissue(
+            "dorsolateral prefrontal cortex", ["prefrontal cortex", "BA9"]
+        )
+        assert "prefrontal cortex" in matched
+        assert "BA9" in unmatched
+
+    def test_short_term_word_boundary(self):
+        matched, unmatched = matches_tissue(
+            "BA9 region", ["BA9", "BA10"]
+        )
+        assert "BA9" in matched
+        assert "BA10" in unmatched
+
+    def test_short_term_no_spurious(self):
+        matched, unmatched = matches_tissue(
+            "BA9 region", ["PFC"]
+        )
+        assert "PFC" in unmatched
+
+    def test_case_insensitive(self):
+        matched, unmatched = matches_tissue(
+            "PREFRONTAL CORTEX", ["prefrontal cortex"]
+        )
+        assert "prefrontal cortex" in matched
+
+    def test_non_string_input(self):
+        matched, unmatched = matches_tissue(None, ["prefrontal cortex"])
+        assert matched == []
+        assert "prefrontal cortex" in unmatched
+
+    def test_empty_text(self):
+        matched, unmatched = matches_tissue("", ["prefrontal cortex"])
+        assert matched == []
+        assert "prefrontal cortex" in unmatched
+
+    def test_empty_terms(self):
+        matched, unmatched = matches_tissue("prefrontal cortex", [])
+        assert matched == []
+        assert unmatched == []
+
+    def test_all_terms_empty_text(self):
+        matched, unmatched = matches_tissue(None, ["prefrontal cortex", "BA9"])
+        assert matched == []
+        assert set(unmatched) == {"prefrontal cortex", "BA9"}

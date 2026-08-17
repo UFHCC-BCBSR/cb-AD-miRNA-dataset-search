@@ -31,22 +31,8 @@ LIBRARY_SELECTION_PATTERNS = [
     r"mirna",
     r"size\s*selected",
 ]
-TISSUE_SYNONYMS = [
-    r"prefrontal cortex",
-    r"dlpfc",
-    r"\bdlpfc\b",
-    r"\bba ?9\b",
-    r"\bba ?10\b",
-    r"\bba ?46\b",
-    r"frontal cortex",
-    r"frontal lobe",
-    r"frontal gyrus",
-    r"middle frontal gyrus",
-    r"superior frontal gyrus",
-    r"brodmann area 9",
-    r"brodmann area 10",
-    r"\bpfc\b",
-]
+# TISSUE_SYNONYMS removed — tissue terms now come exclusively from
+# --tissue-synonyms (UBERON-resolved via the web UI).
 CASE_CONTROL_PATTERNS = [
     r"\bcase\b",
     r"\bcontrol\b",
@@ -108,7 +94,7 @@ def fetch_geo_xml(gse):
     params = {"db": "gds", "id": gse, "rettype": "full", "retmode": "xml"}
     return ncbi_get_xml(url, params)
 
-def parse_geo_xml(content):
+def parse_geo_xml(content, tissue_terms=None):
     # Return dict with needed fields
     root = ET.fromstring(content)
     # Helper to get text of first matching tag
@@ -121,8 +107,13 @@ def parse_geo_xml(content):
     # If library_selection empty, fall back to searching overall text
     if not lib_sel:
         lib_sel = overall
-    # Tissue match
-    tissue_match = matches_any(overall, TISSUE_SYNONYMS)
+    # Tissue match — use matches_tissue from tissue_ontology if terms provided
+    if tissue_terms:
+        from tissue_ontology import matches_tissue, normalize_for_match
+        matched, _ = matches_tissue(overall, tissue_terms)
+        tissue_match = len(matched) > 0
+    else:
+        tissue_match = False
     # Single‑cell flag
     single_cell = matches_any(overall, SINGLE_CELL_PATTERNS)
     # Sample count – count <sample> elements
@@ -160,6 +151,8 @@ def main():
     parser = argparse.ArgumentParser(description='Fetch GEO metadata and filter candidates')
     parser.add_argument('--min-total', type=int, default=30,
                         help='Minimum total sample count')
+    parser.add_argument('--tissue-synonyms', default='',
+                        help='Comma-separated list of tissue terms (from UBERON resolution)')
     parser.add_argument('--library-filter-mode', choices=['strict','allow-no-info','no-polyA'],
                         default='no-polyA', help='DEPRECATED: no longer used')
     parser.add_argument('--max-parallel', type=int, default=2,
@@ -173,6 +166,7 @@ def main():
     MIN_TOTAL = args.min_total
     LIBRARY_FILTER_MODE = args.library_filter_mode
     MAX_PARALLEL = args.max_parallel
+    tissue_terms = [s.strip() for s in args.tissue_synonyms.split(',') if s.strip()]
     # -----------------------------------------------------
     cand = pd.read_csv('candidate_papers.csv', dtype=str).fillna('')
     print(f"Read {len(cand)} papers from candidate_papers.csv")
@@ -216,7 +210,7 @@ def main():
         if not xml:
             continue
         try:
-            info = parse_geo_xml(xml)
+            info = parse_geo_xml(xml, tissue_terms=tissue_terms)
             geo_info[gse] = info
         except Exception as e:
             # skip malformed entries

@@ -248,10 +248,8 @@ def ncbi_get_xml(url, params, retries=MAX_RETRIES):
 # 1. Search terms -- broad on purpose. We're filtering on abstract text
 #    afterward, not trying to encode the full brief into the query.
 # ---------------------------------------------------------------------
-PUBMED_TISSUE_TERMS = [
-    "prefrontal", "DLPFC", "frontal cortex", "BA9", "BA10", "BA46",
-    "frontal gyrus",
-]
+# PUBMED_TISSUE_TERMS removed — tissue terms now come exclusively from
+# --tissue-synonyms (UBERON-resolved via the web UI).
 HUMAN_FILTER = 'NOT (mouse[Title/Abstract] OR mice[Title/Abstract] OR rat[Title/Abstract] OR rats[Title/Abstract] OR macaque[Title/Abstract] OR murine[Title/Abstract] OR muridae[Title/Abstract] OR rodent[Title/Abstract] OR porcine[Title/Abstract] OR canine[Title/Abstract] OR marmoset[Title/Abstract])'
 RETMAX = 5000
 
@@ -267,8 +265,7 @@ LIBRARY_SELECTION_PATTERNS = [
     r"size\s*selected",
 ]
 
-# Tissue synonyms – can be overridden via CLI
-TISSUE_SYNONYMS = []
+# Tissue synonyms are now passed exclusively via --tissue-synonyms.
 
 SINGLE_CELL_PATTERNS = [
     r"single.cell", r"single.nuclei", r"single.nucleus", r"snrna",
@@ -554,15 +551,13 @@ def condition_to_case_patterns(condition):
 
 
 def main():
-    global TISSUE_SYNONYMS
     import argparse
     parser = argparse.ArgumentParser(
         description='Literature-first case-control RNA-seq search')
     parser.add_argument('--condition', required=True,
                         help='Disease/condition of interest (e.g., "Alzheimer\'s disease")')
-    parser.add_argument('--tissue-synonyms',
-                        default=','.join(PUBMED_TISSUE_TERMS),
-                        help='Comma-separated list of tissue synonyms')
+    parser.add_argument('--tissue-synonyms', default='',
+                        help='Comma-separated list of tissue terms (from UBERON resolution)')
     parser.add_argument('--library-filter-mode',
                         choices=['strict', 'allow-no-info', 'no-polyA'],
                         default='no-polyA',
@@ -577,8 +572,7 @@ def main():
     _warn.warn("--library-filter-mode is deprecated and has no effect; "
                "library filtering is now handled by ad_pfc_dataset_search.py",
                DeprecationWarning, stacklevel=2)
-    TISSUE_SYNONYMS = [s.strip() for s in
-                       args.tissue_synonyms.split(',') if s.strip()]
+    tissue_terms = [s.strip() for s in args.tissue_synonyms.split(',') if s.strip()]
 
     case_patterns = condition_to_case_patterns(args.condition)
     print(f"Condition: {args.condition}")
@@ -587,7 +581,7 @@ def main():
 
     # -----------------------------------------------------
     print("Searching PubMed...")
-    query = condition_to_pubmed_query(args.condition, TISSUE_SYNONYMS)
+    query = condition_to_pubmed_query(args.condition, tissue_terms)
     print(f"  Query: {query[:200]}...")
     if args.human_only:
         query = f"({query}) {HUMAN_FILTER}"

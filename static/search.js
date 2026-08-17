@@ -11,16 +11,110 @@ const BASE = cfgBase
     ? new URL(cfgBase.replace(/\/?$/, '/'), window.location.origin).href
     : new URL('.', window.location.href).href;
 
-/* ---- Pattern preview (Task 4) ---- */
+/* ---- Tissue resolution (OLS4) ---- */
+const tissueInput = document.getElementById('tissueInput');
+const tissueChips = document.getElementById('tissueChips');
+const tissueCount = document.getElementById('tissueCount');
+const tissueError = document.getElementById('tissueError');
+const tissueAdd = document.getElementById('tissueAdd');
+const tissueAddInput = document.getElementById('tissueAddInput');
+const tissueAddBtn = document.getElementById('tissueAddBtn');
+let tissueTerms = [];  // source of truth — displayed chips
+let tissueResolving = false;
+
+function renderChips() {
+    tissueChips.innerHTML = '';
+    tissueTerms.forEach((term, i) => {
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-secondary me-1 mb-1 tissue-chip';
+        badge.textContent = term + ' ';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn-close btn-close-sm';
+        btn.setAttribute('aria-label', 'Remove');
+        btn.style.fontSize = '0.6em';
+        btn.addEventListener('click', () => {
+            tissueTerms.splice(i, 1);
+            renderChips();
+        });
+        badge.appendChild(btn);
+        tissueChips.appendChild(badge);
+    });
+    if (tissueTerms.length > 0) {
+        tissueCount.textContent = tissueTerms.length + ' terms';
+        tissueCount.style.display = '';
+        tissueAdd.style.display = '';
+    } else {
+        tissueCount.style.display = 'none';
+        tissueAdd.style.display = 'none';
+    }
+}
+
+function resolveTissue(query) {
+    if (!query.trim()) {
+        tissueTerms = [];
+        renderChips();
+        tissueError.style.display = 'none';
+        return;
+    }
+    tissueResolving = true;
+    tissueError.style.display = 'none';
+    tissueCount.textContent = 'Resolving\u2026';
+    tissueCount.style.display = '';
+    fetch(BASE + 'resolve_tissue?q=' + encodeURIComponent(query))
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            tissueTerms = data.fallback || [query.trim().toLowerCase()];
+            tissueError.textContent = 'Could not reach ontology service. Using raw input as fallback.';
+            tissueError.style.display = '';
+        } else if (!data.terms || data.terms.length === 0) {
+            tissueTerms = [query.trim().toLowerCase()];
+            tissueError.textContent = 'No terms found. Using raw input.';
+            tissueError.style.display = '';
+        } else {
+            tissueTerms = data.terms;
+        }
+        renderChips();
+        tissueResolving = false;
+    })
+    .catch(() => {
+        tissueTerms = [query.trim().toLowerCase()];
+        tissueError.textContent = 'Could not reach ontology service. Using raw input as fallback.';
+        tissueError.style.display = '';
+        renderChips();
+        tissueResolving = false;
+    });
+}
+
+tissueInput.addEventListener('blur', () => resolveTissue(tissueInput.value));
+tissueInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); resolveTissue(tissueInput.value); }
+});
+
+tissueAddBtn.addEventListener('click', addCustomTerm);
+tissueAddInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); addCustomTerm(); }
+});
+
+function addCustomTerm() {
+    const val = tissueAddInput.value.trim().toLowerCase();
+    if (val && !tissueTerms.includes(val)) {
+        tissueTerms.push(val);
+        renderChips();
+    }
+    tissueAddInput.value = '';
+}
+
+/* ---- Pattern preview ---- */
 const conditionEl = document.getElementById('condition');
-const tissueEl = document.getElementById('tissueSyn');
 const previewEl = document.getElementById('patternPreview');
 let previewTimer = null;
 
 function refreshPreview() {
     const cond = conditionEl.value.trim();
     if (!cond) { previewEl.style.display = 'none'; return; }
-    const tissue = tissueEl.value;
+    const tissue = tissueTerms.length > 0 ? tissueTerms.join(',') : tissueInput.value;
     clearTimeout(previewTimer);
     previewTimer = setTimeout(() => {
         fetch(BASE + 'preview_patterns?condition=' + encodeURIComponent(cond)
@@ -38,15 +132,12 @@ function refreshPreview() {
 
 conditionEl.addEventListener('blur', refreshPreview);
 conditionEl.addEventListener('change', refreshPreview);
-tissueEl.addEventListener('blur', refreshPreview);
-tissueEl.addEventListener('change', refreshPreview);
 
-/* ---- Metrics parsing (Task 5) ---- */
+/* ---- Metrics parsing ---- */
 function parseMetrics(line) {
     const panel = document.getElementById('summaryMetrics');
     if (!panel) return;
 
-    // SRA: runs_deduped=N | after_human_rnaseq=N | after_tissue=N | final_datasets=N
     const sraMatch = line.match(
         /SRA:\s*runs_deduped=(\d+)\s*\|\s*after_human_rnaseq=(\d+)\s*\|\s*after_tissue=(\d+)\s*\|\s*final_datasets=(\d+)/
     );
@@ -66,18 +157,20 @@ function parseMetrics(line) {
         document.getElementById('summaryPanel').style.display = '';
     }
 
-    // SRA tissue blank fields
-    const tissueBlank = line.match(/tissue_blank_fields=(\d+)\s*\|\s*tissue_from_metadata=(\d+)/);
-    if (tissueBlank) {
-        panel.innerHTML += '<div class="col-md-6 py-2">'
-            + '<div class="metric-val">' + tissueBlank[1] + '</div>'
-            + '<div class="metric-label">Runs with blank tissue metadata</div></div>'
-            + '<div class="col-md-6 py-2">'
-            + '<div class="metric-val">' + tissueBlank[2] + '</div>'
-            + '<div class="metric-label">Runs with tissue from BioSample</div></div>';
+    // Tissue metadata breakdown
+    const tissueMeta = line.match(/no_metadata_runs=(\d+)\s*\|\s*matched_runs=(\d+)\s*\|\s*no_match_runs=(\d+)/);
+    if (tissueMeta) {
+        panel.innerHTML += '<div class="col-md-4 py-2">'
+            + '<div class="metric-val">' + tissueMeta[1] + '</div>'
+            + '<div class="metric-label">Runs with no tissue metadata</div></div>'
+            + '<div class="col-md-4 py-2">'
+            + '<div class="metric-val">' + tissueMeta[2] + '</div>'
+            + '<div class="metric-label">Runs matched by tissue</div></div>'
+            + '<div class="col-md-4 py-2">'
+            + '<div class="metric-val">' + tissueMeta[3] + '</div>'
+            + '<div class="metric-label">Runs with no tissue match</div></div>';
     }
 
-    // PubMed: papers_found=N | promising=N | ... | total_resolved=N/N (X%)
     const pubMatch = line.match(
         /PubMed:\s*papers_found=(\d+)\s*\|\s*promising=(\d+)\s*\|\s*elink_resolved=(\d+)\s*\|\s*fallback_resolved=(\d+)\s*\|\s*total_resolved=(\S+)/
     );
@@ -137,6 +230,16 @@ function poll(runId) {
 /* ---- Submit ---- */
 form.addEventListener('submit', e => {
     e.preventDefault();
+    if (tissueResolving) {
+        tissueError.textContent = 'Please wait for tissue resolution to finish.';
+        tissueError.style.display = '';
+        return;
+    }
+    if (tissueTerms.length === 0) {
+        tissueError.textContent = 'No tissue terms to match against. Enter a tissue name first.';
+        tissueError.style.display = '';
+        return;
+    }
     logEl.textContent = `BASE URL: ${BASE}\n`;
     downloadDiv.classList.add('hidden');
     document.getElementById('summaryMetrics').innerHTML = '';
@@ -152,12 +255,13 @@ form.addEventListener('submit', e => {
         srcLit: document.getElementById('srcLit').checked,
         srcSra: document.getElementById('srcSra').checked,
         humanOnly: document.getElementById('humanOnly').checked,
-        tissueSyn: tissueEl.value,
+        tissueTerms: tissueTerms,
         libStrategy: checkedValues('libStrategy'),
         libSelection: checkedValues('libSelection'),
         condition: conditionEl.value,
         minTotal: document.getElementById('minTotal').value,
-        maxParallel: 2
+        maxParallel: 2,
+        includeNoMetadata: document.getElementById('includeNoMetadata').checked
     };
 
     fetch(BASE + 'run', {
@@ -184,3 +288,6 @@ form.addEventListener('submit', e => {
         submitBtn.textContent = 'Run Search';
     });
 });
+
+/* ---- Initial resolution on page load ---- */
+resolveTissue(tissueInput.value);

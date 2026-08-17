@@ -10,6 +10,9 @@
         #patternPreview { font-size: 13px; }
         #summaryPanel .metric-val { font-size: 1.5rem; font-weight: 700; }
         #summaryPanel .metric-label { font-size: 0.8rem; color: #6c757d; }
+        .tissue-chip { display:inline-flex; align-items:center; gap:4px; }
+        .tissue-chip .btn-close { font-size:0.6em; }
+        #tissueAddInput { max-width: 200px; }
     </style>
 </head>
 <body class="container py-4">
@@ -124,11 +127,25 @@
                     <div class="form-text">Runs with no value for either field are kept.</div>
                 </div>
 
+                <div class="mb-3">
+                    <label class="form-label fw-bold mb-1" for="tissueInput">Tissue</label>
+                    <div class="form-text mb-1">Expanded automatically to related anatomical terms.</div>
+                    <input type="text" class="form-control" id="tissueInput"
+                           placeholder="prefrontal cortex" value="prefrontal cortex">
+                    <div id="tissueChips" class="mt-2"></div>
+                    <div id="tissueAdd" class="mt-1" style="display:none">
+                        <input type="text" class="form-control form-control-sm d-inline-block" id="tissueAddInput" placeholder="add term">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="tissueAddBtn">Add</button>
+                    </div>
+                    <div id="tissueCount" class="form-text mt-1" style="display:none"></div>
+                    <div id="tissueError" class="text-danger mt-1" style="display:none"></div>
+                </div>
+
                 <div class="mb-0">
-                    <label class="form-label fw-bold mb-1" for="tissueSyn">Tissue terms</label>
-                    <div class="form-text mb-1">Case-insensitive substring match against BioSample source_name, study title,
-                        experiment title, experiment description, and sample title.</div>
-                    <textarea class="form-control" id="tissueSyn" rows="2">prefrontal cortex,dlpfc,ba9,ba10,ba46,frontal cortex,frontal gyrus,middle frontal gyrus,superior frontal gyrus,brodmann area 9,brodmann area 10,pfc</textarea>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="includeNoMetadata" name="includeNoMetadata" checked>
+                        <label class="form-check-label" for="includeNoMetadata">Include runs with no tissue metadata</label>
+                    </div>
                 </div>
             </div>
         </div>
