@@ -61,7 +61,7 @@ form.addEventListener('submit', e => {
         humanOnly: document.getElementById('humanOnly').checked,
         tissueSyn: document.getElementById('tissueSyn').value,
         libFilter: document.querySelector('input[name="libFilter"]:checked').value,
-        caseCtrl: document.getElementById('caseCtrl').value,
+        condition: document.getElementById('condition').value,
         minTotal: document.getElementById('minTotal').value,
         minCases: document.getElementById('minCases').value,
         minControls: document.getElementById('minControls').value,

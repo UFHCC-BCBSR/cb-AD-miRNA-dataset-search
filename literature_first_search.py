@@ -248,15 +248,10 @@ def ncbi_get_xml(url, params, retries=MAX_RETRIES):
 # 1. Search terms -- broad on purpose. We're filtering on abstract text
 #    afterward, not trying to encode the full brief into the query.
 # ---------------------------------------------------------------------
-PUBMED_QUERY = (
-    '(Alzheimer[Title/Abstract] OR "Alzheimer\'s disease"[Title/Abstract]) AND '
-    '(prefrontal[Title/Abstract] OR DLPFC[Title/Abstract] '
-    'OR "frontal cortex"[Title/Abstract] OR BA9[Title/Abstract] '
-    'OR BA10[Title/Abstract] OR BA46[Title/Abstract] '
-    'OR "frontal gyrus"[Title/Abstract]) AND '
-    '(RNA-seq[Title/Abstract] OR "RNA sequencing"[Title/Abstract] '
-    'OR transcriptom*[Title/Abstract])'
-)
+PUBMED_TISSUE_TERMS = [
+    "prefrontal", "DLPFC", "frontal cortex", "BA9", "BA10", "BA46",
+    "frontal gyrus",
+]
 HUMAN_FILTER = 'NOT (mouse[Title/Abstract] OR mice[Title/Abstract] OR rat[Title/Abstract] OR rats[Title/Abstract] OR macaque[Title/Abstract] OR murine[Title/Abstract] OR muridae[Title/Abstract] OR rodent[Title/Abstract] OR porcine[Title/Abstract] OR canine[Title/Abstract] OR marmoset[Title/Abstract])'
 RETMAX = 5000
 
@@ -270,14 +265,6 @@ LIBRARY_SELECTION_PATTERNS = [
     r"small\s*RNA",
     r"mirna",
     r"size\s*selected",
-]
-
-CASE_CONTROL_PATTERNS = [
-    r"\bcase\b",
-    r"\bcontrol\b",
-    r"\bAD\b",
-    r"\bhealthy\b",
-    r"\bcognitively\s*normal\b",
 ]
 
 # Tissue synonyms – can be overridden via CLI
@@ -514,17 +501,66 @@ def find_sample_size_snippets(text):
             for m in SAMPLE_SIZE_PATTERN.finditer(text)][:3]
 
 
+def condition_variants(condition):
+    """Generate liberal disease-name variants from a condition string.
+
+    Examples:
+        "Alzheimer's disease" -> ["Alzheimer's disease", "Alzheimers disease", "Alzheimer"]
+        "breast cancer"       -> ["breast cancer", "breast"]
+    """
+    variants = [condition]
+    if "'" in condition:
+        variants.append(condition.replace("'", ""))
+    words = condition.split()
+    if len(words) > 1:
+        variants.append(words[0])
+    return list(dict.fromkeys(variants))
+
+
+def condition_to_pubmed_query(condition, tissue_terms):
+    """Build a PubMed query from condition + tissue + RNA-seq method."""
+    disease = condition_variants(condition)
+    disease_part = " OR ".join(
+        f'"{v}"[Title/Abstract]' if " " in v else f'{v}[Title/Abstract]'
+        for v in disease
+    )
+    tissue_part = " OR ".join(
+        f'"{t}"[Title/Abstract]' if " " in t else f'{t}[Title/Abstract]'
+        for t in tissue_terms
+    )
+    method_part = (
+        'RNA-seq[Title/Abstract] OR "RNA sequencing"[Title/Abstract] '
+        'OR transcriptom*[Title/Abstract]'
+    )
+    return f"({disease_part}) AND ({tissue_part}) AND ({method_part})"
+
+
+def condition_to_case_patterns(condition):
+    """Generate case-control detection patterns from a condition.
+
+    Returns a list of regex patterns that match the condition in text,
+    used to flag papers/studies that mention the disease of interest.
+    """
+    variants = condition_variants(condition)
+    patterns = []
+    for v in variants:
+        if " " in v:
+            patterns.append(re.escape(v))
+        else:
+            patterns.append(r"\b" + re.escape(v) + r"\b")
+    return patterns
+
+
 def main():
-    global TISSUE_SYNONYMS, CASE_CONTROL_PATTERNS
+    global TISSUE_SYNONYMS
     import argparse
     parser = argparse.ArgumentParser(
-        description='Literature-first AD vs control search')
+        description='Literature-first case-control RNA-seq search')
+    parser.add_argument('--condition', required=True,
+                        help='Disease/condition of interest (e.g., "Alzheimer\'s disease")')
     parser.add_argument('--tissue-synonyms',
-                        default=','.join(TISSUE_SYNONYMS),
+                        default=','.join(PUBMED_TISSUE_TERMS),
                         help='Comma-separated list of tissue synonyms')
-    parser.add_argument('--case-control-regex',
-                        default='|'.join(CASE_CONTROL_PATTERNS),
-                        help='Regex pattern for case/control detection')
     parser.add_argument('--library-filter-mode',
                         choices=['strict', 'allow-no-info', 'no-polyA'],
                         default='no-polyA',
@@ -535,15 +571,20 @@ def main():
                         action='store_false',
                         help='Disable human-only filter')
     args = parser.parse_args()
-    # Override globals if args provided
     TISSUE_SYNONYMS = [s.strip() for s in
                        args.tissue_synonyms.split(',') if s.strip()]
-    CASE_CONTROL_PATTERNS = [args.case_control_regex]
+
+    case_patterns = condition_to_case_patterns(args.condition)
+    print(f"Condition: {args.condition}")
+    print(f"  Disease variants: {condition_variants(args.condition)}")
+    print(f"  Case/control patterns: {case_patterns}")
+
     # -----------------------------------------------------
     print("Searching PubMed...")
-    query = PUBMED_QUERY
+    query = condition_to_pubmed_query(args.condition, TISSUE_SYNONYMS)
+    print(f"  Query: {query[:200]}...")
     if args.human_only:
-        query = f"({PUBMED_QUERY}) {HUMAN_FILTER}"
+        query = f"({query}) {HUMAN_FILTER}"
         print("  Human-only filter: ON (exclude mouse/rat/macaque/etc.)")
     else:
         print("  Human-only filter: OFF")
@@ -571,7 +612,7 @@ def main():
             "library_selection_match": matches_any(
                 abstract, LIBRARY_SELECTION_PATTERNS),
             "case_control_match": matches_any(
-                abstract, CASE_CONTROL_PATTERNS),
+                abstract, case_patterns),
             "sample_size_snippets": find_sample_size_snippets(abstract),
             "pubmed_url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
             "abstract": abstract.strip()[:1000],

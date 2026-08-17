@@ -65,14 +65,6 @@ LIBRARY_SELECTION_PATTERNS = [
     r"size\s*selected",
 ]
 
-CASE_CONTROL_PATTERNS = [
-    r"\bcase\b",
-    r"\bcontrol\b",
-    r"\bAD\b",
-    r"\bhealthy\b",
-    r"\bcognitively\s*normal\b",
-]
-
 SINGLE_CELL_SYNONYMS = [
     r"single.cell", r"single.nuclei", r"single.nucleus", r"snrna",
     r"scrna", r"10x genomics", r"sn-rna", r"sc-rna",
@@ -94,6 +86,36 @@ def matched_terms(text, patterns):
     if not isinstance(text, str):
         return []
     return [p for p in patterns if re.search(p, text, re.IGNORECASE)]
+
+
+def condition_variants(condition):
+    """Generate liberal disease-name variants from a condition string."""
+    variants = [condition]
+    if "'" in condition:
+        variants.append(condition.replace("'", ""))
+    words = condition.split()
+    if len(words) > 1:
+        variants.append(words[0])
+    return list(dict.fromkeys(variants))
+
+
+def condition_to_sra_queries(condition):
+    """Generate broad SRA search queries from a condition."""
+    variants = condition_variants(condition)
+    queries = list(variants)
+    return queries
+
+
+def condition_to_case_patterns(condition):
+    """Generate case-control detection patterns from a condition."""
+    variants = condition_variants(condition)
+    patterns = []
+    for v in variants:
+        if " " in v:
+            patterns.append(re.escape(v))
+        else:
+            patterns.append(r"\b" + re.escape(v) + r"\b")
+    return patterns
 
 
 def fetch_biosample_tissue(biosample_ids, batch_size=200):
@@ -131,18 +153,24 @@ def fetch_biosample_tissue(biosample_ids, batch_size=200):
 
 
 def main():
-    global TISSUE_SYNONYMS, CASE_CONTROL_PATTERNS
+    global TISSUE_SYNONYMS
     import argparse
-    parser = argparse.ArgumentParser(description='SRA AD vs control search with tissue & library filters')
+    parser = argparse.ArgumentParser(description='SRA case-control search with tissue & library filters')
+    parser.add_argument('--condition', required=True,
+                        help='Disease/condition of interest (e.g., "Alzheimer\'s disease")')
     parser.add_argument('--tissue-synonyms', default=','.join(TISSUE_SYNONYMS),
                         help='Comma‑separated list of tissue synonyms')
-    parser.add_argument('--case-control-regex', default='|'.join(CASE_CONTROL_PATTERNS),
-                        help='Regex pattern for case/control detection')
     parser.add_argument('--library-filter-mode', choices=['strict','allow-no-info','no-polyA'],
                         default='no-polyA', help='How to treat missing library selection')
     args = parser.parse_args()
     TISSUE_SYNONYMS = [s.strip() for s in args.tissue_synonyms.split(',') if s.strip()]
-    CASE_CONTROL_PATTERNS = [args.case_control_regex]
+    case_patterns = condition_to_case_patterns(args.condition)
+    broad_queries = condition_to_sra_queries(args.condition)
+
+    print(f"Condition: {args.condition}")
+    print(f"  SRA queries: {broad_queries}")
+    print(f"  Case/control patterns: {case_patterns}")
+
     # library_filter_mode not used directly here; will be passed downstream
     db = SRAweb()
 
@@ -152,8 +180,6 @@ def main():
     #    every field we can see -- this is the key change from the
     #    AND-phrase approach.
     # -------------------------------------------------------------
-    broad_queries = ["Alzheimer", "Alzheimer's disease", "dementia"]
-
     print("Searching SRA with broad, disease-only queries...")
     raw_hits = []
     for q in broad_queries:
@@ -212,7 +238,7 @@ def main():
         raw["disease_exclude_flag"] = raw["_all_text"].apply(lambda t: matches_any(t, DISEASE_EXCLUDE_SYNONYMS))
         raw["likely_single_cell"] = raw["_all_text"].apply(lambda t: matches_any(t, SINGLE_CELL_SYNONYMS))
         raw["likely_specialized_assay"] = raw["_all_text"].apply(lambda t: matches_any(t, SPECIALIZED_ASSAY_SYNONYMS))
-        raw["case_control_match"] = raw["_all_text"].apply(lambda t: matches_any(t, CASE_CONTROL_PATTERNS))
+        raw["case_control_match"] = raw["_all_text"].apply(lambda t: matches_any(t, case_patterns))
 
     candidates = raw[raw["tissue_match"]] if len(raw) else raw
     print(f"After tissue-concept match (any synonym, any field): {len(candidates)}")

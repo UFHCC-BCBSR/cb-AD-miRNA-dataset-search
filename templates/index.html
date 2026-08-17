@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>AD vs Control RNA‑seq Candidate Search</title>
+    <title>Case‑Control RNA‑seq Candidate Search</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <style>
         #log { height: 300px; overflow-y: scroll; background:#f8f9fa; padding:10px; border:1px solid #ced4da; }
@@ -10,7 +10,7 @@
     </style>
 </head>
 <body class="container py-4">
-    <h1 class="mb-4">AD vs Control RNA‑seq Candidate Search</h1>
+    <h1 class="mb-4">Case‑Control RNA‑seq Candidate Search</h1>
     <form id="searchForm">
         <div class="mb-3">
             <p class="form-label fw-bold mb-2"><strong>Data sources</strong></p>
@@ -49,8 +49,9 @@
             </div>
         </div>
         <div class="mb-3">
-            <p class="form-label fw-bold mb-2"><strong>Case/Control regex (one regex)</strong></p>
-            <input type="text" class="form-control" id="caseCtrl" value="case|control|AD|healthy|cognitively normal">
+            <label class="form-label" for="condition"><strong>Condition of interest</strong></label>
+            <input type="text" class="form-control" id="condition" placeholder="e.g., Alzheimer&#39;s disease, breast cancer" value="Alzheimer's disease">
+            <div class="form-text">The app generates search terms and detection patterns from this automatically.</div>
         </div>
         <div class="row">
             <div class="col-md-4 mb-3">

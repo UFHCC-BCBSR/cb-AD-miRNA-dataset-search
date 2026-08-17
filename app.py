@@ -32,8 +32,8 @@ def start_pipeline(run_id, params):
     if params.get('srcLit'):
         lit_cmd = [
             'python', 'literature_first_search.py',
+            f"--condition={params['condition']}",
             f"--tissue-synonyms={params['tissueSyn']}",
-            f"--case-control-regex={params['caseCtrl']}",
             f"--library-filter-mode={params['libFilter']}"
         ]
         if params.get('humanOnly'):
@@ -44,8 +44,8 @@ def start_pipeline(run_id, params):
     if params.get('srcSra'):
         commands.append([
             'python', 'ad_pfc_dataset_search.py',
+            f"--condition={params['condition']}",
             f"--tissue-synonyms={params['tissueSyn']}",
-            f"--case-control-regex={params['caseCtrl']}",
             f"--library-filter-mode={params['libFilter']}"
         ])
     commands.append([
@@ -88,7 +88,7 @@ def run():
         'srcSra': bool(data.get('srcSra', True)),
         'tissueSyn': data.get('tissueSyn', ''),
         'libFilter': data.get('libFilter', 'no-polyA'),
-        'caseCtrl': data.get('caseCtrl', ''),
+        'condition': data.get('condition', ''),
         'minTotal': int(data.get('minTotal', 30)),
         'minCases': int(data.get('minCases', 30)),
         'minControls': int(data.get('minControls', 30)),
